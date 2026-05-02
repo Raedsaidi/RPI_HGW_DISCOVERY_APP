@@ -1,0 +1,216 @@
+/* ── Run summary ── */
+.rerr-modal__run-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--neutral-3);
+  border-radius: var(--radius-md);
+  margin-bottom: 14px;
+  border: 1px solid var(--neutral-4);
+}
+
+.rerr-modal__run-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rerr-modal__run-time {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--neutral-9);
+}
+
+.rerr-modal__run-by {
+  font-size: 12px;
+  color: var(--neutral-7);
+}
+
+.rerr-modal__run-count {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--error-dark);
+  background: var(--error-light);
+  border: 1px solid var(--error-border);
+  padding: 3px 10px;
+  border-radius: 100px;
+}
+
+/* ── Filters ── */
+.rerr-modal__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.rerr-modal__select {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--neutral-5);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-family: var(--font-family);
+  color: var(--neutral-9);
+  background: var(--neutral-1);
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.rerr-modal__select:focus {
+  border-color: var(--primary-5);
+}
+
+/* ── List ── */
+.rerr-modal__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+/* ── Item ── */
+.rerr-modal__item {
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--error-light);
+}
+
+.rerr-modal__item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(245, 34, 45, 0.04);
+  border-bottom: 1px solid var(--error-border);
+}
+
+.rerr-modal__item-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rerr-modal__device-ip {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--error-dark);
+}
+
+.rerr-modal__device-type {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--neutral-7);
+  background: var(--neutral-3);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--neutral-4);
+}
+
+.rerr-modal__item-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rerr-modal__stage {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 100px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.rerr-modal__time {
+  font-size: 11px;
+  color: var(--neutral-6);
+  font-family: var(--font-mono);
+}
+
+.rerr-modal__item-body {
+  padding: 10px 12px;
+}
+
+.rerr-modal__error-msg {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--error-dark);
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.6;
+}
+
+/* ── Empty ── */
+.rerr-modal__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px;
+  color: var(--neutral-7);
+  font-size: 13px;
+  text-align: center;
+}
+
+.rerr-modal__empty p {
+  margin: 0;
+}
+
+/* ── Pagination ── */
+.rerr-modal__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--neutral-4);
+}
+
+.rerr-modal__page-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--neutral-5);
+  background: var(--neutral-1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--neutral-7);
+  transition: all var(--transition-fast);
+}
+
+.rerr-modal__page-btn:hover:not(:disabled) {
+  border-color: var(--primary-5);
+  color: var(--primary-6);
+}
+
+.rerr-modal__page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.rerr-modal__page-info {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--neutral-7);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rerr-modal__page-total {
+  font-size: 12px;
+  color: var(--neutral-6);
+  font-weight: 400;
+}

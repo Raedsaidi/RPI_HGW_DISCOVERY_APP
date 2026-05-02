@@ -1,0 +1,99 @@
+.del-user-modal__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+.del-user-modal__icon {
+  width: 56px;
+  height: 56px;
+  background: var(--error-light);
+  border: 1px solid var(--error-border);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.del-user-modal__user-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--neutral-3);
+  border: 1px solid var(--neutral-5);
+  border-radius: var(--radius-lg);
+  text-align: left;
+}
+.del-user-modal__avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--error-light);
+  border: 1px solid var(--error-border);
+  color: var(--error-dark);
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.del-user-modal__user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.del-user-modal__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--neutral-10);
+}
+.del-user-modal__username {
+  font-size: 12px;
+  color: var(--neutral-6);
+  font-family: var(--font-mono);
+}
+.del-user-modal__email {
+  font-size: 12px;
+  color: var(--neutral-7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.del-user-modal__role {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--neutral-7);
+  background: var(--neutral-4);
+  padding: 4px 10px;
+  border-radius: 100px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.del-user-modal__desc {
+  font-size: 13px;
+  color: var(--neutral-7);
+  line-height: 1.6;
+  max-width: 320px;
+  margin: 0;
+}
+.del-user-modal__desc strong {
+  color: var(--error-dark);
+}
+.del-user-modal__error {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--error-light);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-md);
+  color: var(--error-dark);
+  font-size: 13px;
+  font-weight: 500;
+}

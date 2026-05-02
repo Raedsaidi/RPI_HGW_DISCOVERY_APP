@@ -1,0 +1,584 @@
+/* ── Tabs ── */
+.rpi-detail__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--neutral-4);
+  margin: -20px -24px 16px;
+  padding: 0 24px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.rpi-detail__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.rpi-detail__tab {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--neutral-7);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-family);
+  margin-bottom: -1px;
+  white-space: nowrap;
+}
+
+.rpi-detail__tab:hover {
+  color: var(--purple-main);
+}
+
+.rpi-detail__tab--active {
+  color: var(--purple-main);
+  border-bottom-color: var(--purple-main);
+  font-weight: 600;
+}
+
+/* ── Content ── */
+.rpi-detail__content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Section ── */
+.rpi-detail__section {
+  border: 1px solid var(--neutral-4);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.rpi-detail__section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  background: var(--neutral-3);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--neutral-7);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--neutral-4);
+}
+
+/* ── Row ── */
+.rpi-detail__row {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--neutral-4);
+  gap: 12px;
+}
+
+.rpi-detail__row:last-child {
+  border-bottom: none;
+}
+
+.rpi-detail__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--neutral-7);
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.rpi-detail__value {
+  font-size: 13px;
+  color: var(--neutral-10);
+  flex: 1;
+}
+
+.rpi-detail__null {
+  color: var(--neutral-5);
+}
+
+.rpi-detail__error-msg {
+  font-size: 12px;
+  color: var(--error-dark);
+  background: var(--error-light);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+}
+
+.rpi-detail__temp {
+  font-weight: 600;
+  color: var(--warning-dark);
+}
+
+/* ── Progress Bars (Memory & Disk) ── */
+.rpi-detail__bar-wrap {
+  padding: 12px 14px;
+  border: 1px solid var(--neutral-4);
+  border-radius: var(--radius-lg);
+  background: var(--neutral-2);
+}
+
+.rpi-detail__bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--neutral-7);
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.rpi-detail__bar-pct {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.rpi-detail__bar-pct--ok {
+  color: var(--success-dark);
+}
+
+.rpi-detail__bar-pct--warn {
+  color: var(--warning-dark);
+}
+
+.rpi-detail__bar-pct--danger {
+  color: var(--error-dark);
+}
+
+.rpi-detail__bar {
+  height: 8px;
+  background: var(--neutral-4);
+  border-radius: 100px;
+  overflow: hidden;
+}
+
+.rpi-detail__bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--purple-main), #9254de);
+  border-radius: 100px;
+  transition: width 0.6s ease;
+}
+
+.rpi-detail__bar-fill--warn {
+  background: linear-gradient(90deg, var(--warning-main), var(--warning-dark));
+}
+
+.rpi-detail__bar-fill--danger {
+  background: linear-gradient(90deg, var(--error-main), var(--error-dark));
+}
+
+/* ── Memory bar (legacy - kept for compatibility) ── */
+.rpi-detail__mem-bar-wrap {
+  padding: 4px 0;
+}
+
+.rpi-detail__mem-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--neutral-7);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.rpi-detail__mem-bar {
+  height: 8px;
+  background: var(--neutral-4);
+  border-radius: 100px;
+  overflow: hidden;
+}
+
+.rpi-detail__mem-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--purple-main), #9254de);
+  border-radius: 100px;
+  transition: width 0.6s ease;
+}
+
+/* ── Script List ── */
+.rpi-detail__script-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 14px;
+}
+
+.rpi-detail__script-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--neutral-3);
+  border: 1px solid var(--neutral-4);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--neutral-9);
+  font-family: var(--font-mono);
+  word-break: break-all;
+  transition: background var(--transition-fast);
+}
+
+.rpi-detail__script-item:hover {
+  background: var(--neutral-4);
+}
+
+.rpi-detail__script-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--purple-main);
+  flex-shrink: 0;
+}
+
+/* ── Empty small ── */
+.rpi-detail__empty-sm {
+  font-size: 12px;
+  color: var(--neutral-6);
+  font-style: italic;
+  padding: 10px 14px;
+}
+
+/* ── Subsection (Docker containers) ── */
+.rpi-detail__subsection {
+  padding: 10px 14px;
+  border-top: 1px solid var(--neutral-4);
+  background: var(--neutral-2);
+}
+
+.rpi-detail__subsection-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--neutral-7);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+/* ── Raw block (ifconfig / ps) ── */
+.rpi-detail__raw-block {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--neutral-8);
+  background: var(--neutral-2);
+  border-top: 1px solid var(--neutral-4);
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.7;
+}
+
+.rpi-detail__raw-block--scroll {
+  max-height: 220px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--neutral-5) transparent;
+}
+
+.rpi-detail__raw-block--scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.rpi-detail__raw-block--scroll::-webkit-scrollbar-thumb {
+  background: var(--neutral-5);
+  border-radius: 2px;
+}
+
+/* ── Tags ── */
+.rpi-detail__history-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rpi-detail__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--purple-light);
+  color: var(--purple-main);
+  border: 1px solid var(--purple-border, rgba(99, 102, 241, 0.25));
+  font-family: var(--font-mono);
+}
+
+.rpi-detail__tag--blue {
+  background: var(--info-light);
+  color: var(--info-dark);
+  border-color: var(--info-border, rgba(59, 130, 246, 0.25));
+}
+
+.rpi-detail__tag--purple {
+  background: var(--purple-light);
+  color: var(--purple-dark);
+  border-color: var(--purple-border, rgba(168, 85, 247, 0.25));
+}
+
+/* ── History ── */
+.rpi-detail__history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rpi-detail__history-item {
+  border: 1px solid var(--neutral-4);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.rpi-detail__history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--neutral-3);
+  border-bottom: 1px solid var(--neutral-4);
+}
+
+.rpi-detail__history-run {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--purple-main);
+  font-family: var(--font-mono);
+}
+
+.rpi-detail__history-time {
+  font-size: 11px;
+  color: var(--neutral-7);
+}
+
+.rpi-detail__history-grid {
+  display: flex;
+  flex-direction: column;
+}
+
+.rpi-detail__history-row {
+  display: flex;
+  gap: 12px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--neutral-8);
+  border-bottom: 1px solid var(--neutral-4);
+}
+
+.rpi-detail__history-row:last-child {
+  border-bottom: none;
+}
+
+.rpi-detail__history-row span:first-child {
+  color: var(--neutral-7);
+  width: 70px;
+  flex-shrink: 0;
+}
+
+/* ── History scripts/tags section ── */
+.rpi-detail__history-scripts {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--neutral-4);
+  flex-wrap: wrap;
+  background: var(--neutral-2);
+}
+
+.rpi-detail__history-scripts-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--neutral-7);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  padding-top: 3px;
+}
+
+/* ── Empty ── */
+.rpi-detail__empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--neutral-6);
+  font-size: 13px;
+}
+/* ── IP List ── */
+.rpi-detail__ip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 14px;
+}
+
+.rpi-detail__ip-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--neutral-3);
+  border: 1px solid var(--neutral-4);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.rpi-detail__ip-iface {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--purple-main);
+  background: var(--purple-light);
+  padding: 2px 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.rpi-detail__ip-addr {
+  color: var(--neutral-10);
+  flex: 1;
+}
+
+.rpi-detail__ip-mac {
+  font-size: 11px;
+  color: var(--neutral-6);
+  margin-left: auto;
+}
+
+/* ── USB detail (objet) ── */
+.rpi-detail__script-item--col {
+  align-items: flex-start;
+}
+
+.rpi-detail__usb-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.rpi-detail__usb-row {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.rpi-detail__usb-key {
+  color: var(--neutral-6);
+  width: 80px;
+  flex-shrink: 0;
+  text-transform: capitalize;
+}
+
+.rpi-detail__usb-val {
+  color: var(--neutral-9);
+  word-break: break-all;
+}
+.rpi-detail__history-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.rpi-detail__history-badge .status-badge,
+.rpi-detail__history-badge > * {
+  transform: scale(0.9);
+  transform-origin: right center;
+}
+/* ══════════════════════════════════════════════════════════════
+   DOCKER ITEMS (Containers & Images)
+══════════════════════════════════════════════════════════════ */
+
+.rpi-detail__docker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 14px;
+}
+
+.rpi-detail__docker-item {
+  padding: 10px 12px;
+  background: var(--neutral-2);
+  border: 1px solid var(--neutral-4);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.rpi-detail__docker-item:hover {
+  background: var(--neutral-3);
+  border-color: var(--purple-border);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.rpi-detail__docker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  gap: 12px;
+}
+
+.rpi-detail__docker-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--neutral-10);
+  font-family: var(--font-mono);
+  flex: 1;
+  word-break: break-all;
+}
+
+.rpi-detail__docker-status {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.rpi-detail__docker-status--running {
+  background: var(--success-light);
+  color: var(--success-dark);
+}
+
+.rpi-detail__docker-status--stopped {
+  background: var(--neutral-4);
+  color: var(--neutral-7);
+}
+
+.rpi-detail__docker-size {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--purple-main);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.rpi-detail__docker-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--neutral-6);
+  flex-wrap: wrap;
+}
+
+.rpi-detail__docker-image {
+  font-family: var(--font-mono);
+  color: var(--neutral-7);
+}
+
+.rpi-detail__docker-id {
+  font-family: var(--font-mono);
+  color: var(--neutral-5);
+}
+
+.rpi-detail__docker-created {
+  margin-left: auto;
+  color: var(--neutral-6);
+}
+
+/* ── Tag green (pour images dans history) ── */
+.rpi-detail__tag--green {
+  background: var(--success-light);
+  color: var(--success-dark);
+  border-color: rgba(34, 197, 94, 0.25);
+}

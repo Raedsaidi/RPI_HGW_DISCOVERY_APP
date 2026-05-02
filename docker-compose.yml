@@ -1,0 +1,171 @@
+
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_USER: app_user         
+      MYSQL_PASSWORD: app_password 
+      TZ: UTC
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init-db.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    networks:
+      - app_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: auth_service
+    restart: on-failure
+    ports:
+      - "8000:8000"
+    environment:
+      APP_NAME: "auth-service"
+      ENVIRONMENT: "dev"
+      LOG_LEVEL: "INFO"
+
+      DB_HOST: "mysql"
+      DB_PORT: "3306"
+      DB_NAME: "auth_service"
+      DB_USER: "app_user"
+      DB_PASSWORD: "app_password"
+
+      JWT_SECRET_KEY: "7f8d2a1e4b9c6d0f3a8e5b2c1d4f9a0e7c6b3f1a2d9e5c4b8a1f0d7e2c3b4a6"
+      JWT_ALGORITHM: "HS256"
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: "7"
+
+      INITIAL_SUPERADMIN_USERNAME: "superadmin"
+      INITIAL_SUPERADMIN_PASSWORD: "SuperAdmin123!"
+      INITIAL_SUPERADMIN_EMAIL: "superadmin@example.com"
+      INITIAL_SUPERADMIN_FULL_NAME: "Super Admin"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - app_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  discovery-service:
+    build:
+      context: ./discovery-service
+      dockerfile: Dockerfile
+    container_name: discovery_service
+    restart: on-failure
+    ports:
+      - "8001:8001"
+    environment:
+      APP_NAME: "discovery-service"
+      ENVIRONMENT: "dev"
+      LOG_LEVEL: "INFO"
+
+      DB_HOST: "mysql"
+      DB_PORT: "3306"
+      DB_NAME: "discovery_service"
+      DB_USER: "app_user"
+      DB_PASSWORD: "app_password"
+
+      JWT_SECRET_KEY: "7f8d2a1e4b9c6d0f3a8e5b2c1d4f9a0e7c6b3f1a2d9e5c4b8a1f0d7e2c3b4a6"
+      JWT_ALGORITHM: "HS256"
+
+      PISERVER_HOST: "10.255.25.15"
+      PISERVER_USER: "root"
+      PISERVER_PASS: "sah"
+      PISERVER_FILE: "/etc/dnsmasq.d/piserver"
+      SWITCH_TELNET_PORT: "60000"
+      SWITCH_TELNET_USER: "admin"
+      SWITCH_TELNET_PASS: "password"
+      RPI_SSH_USER: "pi"
+      RPI_SSH_PASS: "raspberry"
+      HGW_SSH_USER: "root"
+      HGW_SSH_PASS: "sah"
+      SYNC_HOUR: "4"
+      SYNC_MINUTE: "0"
+      SYNC_ENABLED: "true"
+      SYNC_TIMEZONE: "UTC"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - discovery_logs:/app/logs
+    networks:
+      - app_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  frontend:
+    build:
+      context: ./network-dashboard
+      dockerfile: Dockerfile
+      target: production
+      args:
+        VITE_AUTH_URL: ${VITE_AUTH_URL}
+        VITE_DISCOVERY_URL: ${VITE_DISCOVERY_URL}
+    container_name: network-dashboard-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - auth-service
+      - discovery-service
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    restart: unless-stopped
+    ports:
+      - "9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      DOZZLE_LEVEL: info
+      DOZZLE_TAILSIZE: 300
+    depends_on:
+      - auth-service
+      - discovery-service
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    name: myapp_network
+    driver: bridge
+
+volumes:
+  mysql_data:
+    name: myapp_mysql_data
+  discovery_logs:
+    name: myapp_discovery_logs

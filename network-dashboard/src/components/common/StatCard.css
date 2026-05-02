@@ -1,0 +1,91 @@
+.stat-card {
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--neutral-5);
+  transition: box-shadow var(--transition-base), transform var(--transition-base);
+  overflow: hidden;
+}
+
+.stat-card:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
+}
+
+.stat-card__body {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.stat-card__content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-card__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--neutral-7);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.stat-card__value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--neutral-10);
+  line-height: 1.2;
+  letter-spacing: -0.5px;
+}
+
+.stat-card__skeleton {
+  width: 80px;
+  height: 32px;
+  background: linear-gradient(
+    90deg,
+    var(--neutral-4) 25%,
+    var(--neutral-3) 50%,
+    var(--neutral-4) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
+  margin-top: 4px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.stat-card__trend {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.stat-card__trend--up {
+  color: var(--success-main);
+}
+
+.stat-card__trend--down {
+  color: var(--error-main);
+}
+
+.stat-card__trend-label {
+  color: var(--neutral-7);
+  font-weight: 400;
+}
+
+.stat-card__icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}

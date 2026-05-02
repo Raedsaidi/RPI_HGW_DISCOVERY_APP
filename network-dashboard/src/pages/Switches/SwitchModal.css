@@ -1,0 +1,127 @@
+.sw-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sw-modal__api-error {
+  padding: 10px 14px;
+  background: var(--error-light);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-md);
+  color: var(--error-dark);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.sw-modal__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── Field ── */
+.sw-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sw-modal__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--neutral-9);
+}
+
+.sw-modal__required {
+  color: var(--error-main);
+  margin-left: 3px;
+}
+
+.sw-modal__input {
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--neutral-5);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-family: var(--font-family);
+  color: var(--neutral-10);
+  background: var(--neutral-1);
+  outline: none;
+  transition: all var(--transition-fast);
+  width: 100%;
+}
+
+.sw-modal__input:focus {
+  border-color: var(--primary-5);
+  box-shadow: 0 0 0 2px var(--primary-1);
+}
+
+.sw-modal__input--error {
+  border-color: var(--error-main);
+}
+
+.sw-modal__input--error:focus {
+  box-shadow: 0 0 0 2px var(--error-light);
+}
+
+.sw-modal__error {
+  font-size: 12px;
+  color: var(--error-main);
+}
+
+/* ── Toggle ── */
+.sw-modal__toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sw-modal__toggle {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  cursor: pointer;
+}
+
+.sw-modal__toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.sw-modal__toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--neutral-5);
+  border-radius: 22px;
+  transition: background var(--transition-fast);
+}
+
+.sw-modal__toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+  left: 3px;
+  top: 3px;
+  transition: transform var(--transition-fast);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.sw-modal__toggle input:checked + .sw-modal__toggle-slider {
+  background: var(--primary-6);
+}
+
+.sw-modal__toggle input:checked + .sw-modal__toggle-slider::before {
+  transform: translateX(18px);
+}
+
+.sw-modal__toggle-label {
+  font-size: 13px;
+  color: var(--neutral-8);
+  font-weight: 500;
+}

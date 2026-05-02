@@ -1,0 +1,121 @@
+.switches-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.switches-page__header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Filters bar ── */
+.switches-page__filters {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--neutral-4);
+  flex-wrap: wrap;
+}
+
+.switches-page__filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.switches-page__filter-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--neutral-7);
+  white-space: nowrap;
+}
+
+.switches-page__select {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--neutral-5);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-family: var(--font-family);
+  color: var(--neutral-9);
+  background: var(--neutral-1);
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+  min-width: 120px;
+}
+
+.switches-page__select:focus {
+  border-color: var(--primary-5);
+  box-shadow: 0 0 0 2px var(--primary-1);
+}
+
+/* ── Table cells ── */
+.sw-table__ip {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary-7);
+}
+
+.sw-table__mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--neutral-8);
+}
+
+.sw-table__null {
+  color: var(--neutral-5);
+}
+
+.sw-table__time {
+  font-size: 12px;
+  color: var(--neutral-7);
+}
+
+/* ── Row actions ── */
+.sw-table__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.sw-table__action-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  background: transparent;
+}
+
+.sw-table__action-btn--view {
+  color: var(--primary-6);
+}
+
+.sw-table__action-btn--view:hover {
+  background: var(--primary-1);
+}
+
+.sw-table__action-btn--edit {
+  color: var(--warning-main);
+}
+
+.sw-table__action-btn--edit:hover {
+  background: var(--warning-light);
+}
+
+.sw-table__action-btn--delete {
+  color: var(--error-main);
+}
+
+.sw-table__action-btn--delete:hover {
+  background: var(--error-light);
+}

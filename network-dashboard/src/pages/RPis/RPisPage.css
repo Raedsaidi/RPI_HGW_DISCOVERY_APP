@@ -1,0 +1,226 @@
+.rpis-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Summary strip ── */
+.rpis-page__summary {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--neutral-5);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 0 24px;
+  height: 64px;
+  width: fit-content;
+}
+
+.rpis-page__summary-sep {
+  width: 1px;
+  height: 32px;
+  background: var(--neutral-4);
+  margin: 0 20px;
+}
+
+.rpis-page__summary-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rpis-page__summary-val {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.rpis-page__summary-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--neutral-7);
+}
+
+.rpis-page__summary-item--total {
+  color: var(--primary-6);
+}
+
+.rpis-page__summary-item--ok {
+  color: var(--success-main);
+}
+
+.rpis-page__summary-item--fail {
+  color: var(--error-main);
+}
+
+.rpis-page__summary-item--cred {
+  color: var(--warning-main);
+}
+
+/* ── Filters ── */
+.rpis-page__filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--neutral-4);
+  flex-wrap: wrap;
+}
+
+.rpis-page__filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rpis-page__filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rpis-page__filter-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--neutral-7);
+  white-space: nowrap;
+}
+
+.rpis-page__select {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--neutral-5);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-family: var(--font-family);
+  color: var(--neutral-9);
+  background: var(--neutral-1);
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+  min-width: 110px;
+}
+
+.rpis-page__select:focus {
+  border-color: var(--primary-5);
+  box-shadow: 0 0 0 2px var(--primary-1);
+}
+
+/* ── Table cells ── */
+.rpi-table__ip {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--purple-main);
+}
+
+.rpi-table__mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--neutral-8);
+}
+
+.rpi-table__mono--cyan {
+  color: var(--cyan-main);
+}
+
+.rpi-table__label {
+  font-size: 12px;
+  background: var(--neutral-3);
+  color: var(--neutral-8);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--neutral-4);
+}
+
+.rpi-table__switch {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.rpi-table__port {
+  font-size: 11px;
+  color: var(--neutral-6);
+  font-family: var(--font-mono);
+}
+
+.rpi-table__time {
+  font-size: 12px;
+  color: var(--neutral-7);
+}
+
+.rpi-table__null {
+  color: var(--neutral-5);
+}
+
+/* ── SSH indicator ── */
+.rpi-table__ssh {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 100px;
+}
+
+.rpi-table__ssh--ok {
+  background: var(--success-light);
+  color: var(--success-dark);
+  border: 1px solid var(--success-border);
+}
+
+.rpi-table__ssh--fail {
+  background: var(--error-light);
+  color: var(--error-dark);
+  border: 1px solid var(--error-border);
+}
+
+/* ── Row actions ── */
+.rpi-table__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.rpi-table__action-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  background: transparent;
+}
+
+.rpi-table__action-btn--view {
+  color: var(--primary-6);
+}
+
+.rpi-table__action-btn--view:hover {
+  background: var(--primary-1);
+}
+
+.rpi-table__action-btn--cred {
+  color: var(--warning-main);
+}
+
+.rpi-table__action-btn--cred:hover {
+  background: var(--warning-light);
+}
+
+.rpi-table__action-btn--delete {
+  color: var(--error-main);
+}
+
+.rpi-table__action-btn--delete:hover {
+  background: var(--error-light);
+}

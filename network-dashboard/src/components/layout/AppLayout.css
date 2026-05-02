@@ -1,0 +1,17 @@
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+  background: var(--page-bg);
+}
+
+.app-layout__main {
+  flex: 1;
+  transition: margin-left var(--transition-slow);
+  padding-top: var(--navbar-height);
+  min-height: 100vh;
+}
+
+.app-layout__content {
+  padding: 24px;
+  min-height: calc(100vh - var(--navbar-height));
+}

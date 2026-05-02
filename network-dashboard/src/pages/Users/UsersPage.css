@@ -1,0 +1,196 @@
+.users-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.users-page__header-actions {
+  display: flex;
+  gap: 8px;
+}
+.users-page__role-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.users-page__role-card {
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--neutral-5);
+  box-shadow: var(--shadow-card);
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  transition: box-shadow var(--transition-base), transform var(--transition-base);
+}
+.users-page__role-card:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
+}
+.users-page__role-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.users-page__role-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.users-page__role-card-count {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--neutral-10);
+  line-height: 1.2;
+}
+.users-page__role-card-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--neutral-7);
+}
+.users-page__filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--neutral-4);
+  flex-wrap: wrap;
+}
+.users-page__filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.users-page__filter-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--neutral-7);
+  white-space: nowrap;
+}
+.users-page__role-btns {
+  display: flex;
+  gap: 4px;
+}
+.users-page__role-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--neutral-5);
+  border-radius: 100px;
+  background: var(--neutral-1);
+  color: var(--neutral-7);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-family);
+  white-space: nowrap;
+}
+.users-page__role-btn:hover {
+  border-color: var(--primary-4);
+  color: var(--primary-6);
+}
+.users-page__role-btn--active {
+  background: var(--primary-6);
+  border-color: var(--primary-6);
+  color: #fff;
+}
+.users-page__role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.users-table__id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--neutral-6);
+}
+.users-table__name-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.users-table__avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--primary-1);
+  border: 1px solid var(--primary-2);
+  color: var(--primary-7);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.users-table__name-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.users-table__full-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--neutral-10);
+}
+.users-table__username {
+  font-size: 11px;
+  color: var(--neutral-6);
+  font-family: var(--font-mono);
+}
+.users-table__email {
+  font-size: 13px;
+  color: var(--neutral-8);
+}
+.users-table__date {
+  font-size: 12px;
+  color: var(--neutral-7);
+}
+.users-table__null {
+  color: var(--neutral-5);
+  font-size: 12px;
+}
+.users-table__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.users-table__action-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  background: transparent;
+}
+.users-table__action-btn--edit {
+  color: var(--warning-main);
+}
+.users-table__action-btn--edit:hover {
+  background: var(--warning-light);
+}
+.users-table__action-btn--delete {
+  color: var(--error-main);
+}
+.users-table__action-btn--delete:hover {
+  background: var(--error-light);
+}
+@media (max-width: 1100px) {
+  .users-page__role-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

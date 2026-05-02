@@ -1,0 +1,152 @@
+.hgw-history__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--neutral-7);
+  margin-bottom: 14px;
+  font-weight: 500;
+}
+
+.hgw-history__empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--neutral-6);
+  font-size: 13px;
+}
+
+/* ── List ── */
+.hgw-history__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hgw-history__item {
+  border: 1px solid var(--neutral-4);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: box-shadow var(--transition-fast);
+}
+
+.hgw-history__item:hover {
+  box-shadow: var(--shadow-card-hover);
+  border-color: var(--cyan-border);
+}
+
+/* Item header */
+.hgw-history__item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 14px;
+  background: var(--neutral-3);
+  border-bottom: 1px solid var(--neutral-4);
+}
+
+.hgw-history__item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hgw-history__run-id {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--cyan-main);
+  font-family: var(--font-mono);
+  background: var(--cyan-light);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--cyan-border);
+}
+
+.hgw-history__model {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--neutral-9);
+}
+
+.hgw-history__time {
+  font-size: 12px;
+  color: var(--neutral-7);
+}
+
+/* Item body */
+.hgw-history__item-body {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0;
+}
+
+.hgw-history__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 14px;
+  border-right: 1px solid var(--neutral-4);
+  border-bottom: 1px solid var(--neutral-4);
+}
+
+.hgw-history__stat:nth-child(even) {
+  border-right: none;
+}
+
+.hgw-history__stat:nth-last-child(-n + 2) {
+  border-bottom: none;
+}
+
+.hgw-history__stat-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--neutral-7);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.hgw-history__stat-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--neutral-10);
+}
+
+/* ── Pagination ── */
+.hgw-history__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--neutral-4);
+}
+
+.hgw-history__page-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--neutral-5);
+  background: var(--neutral-1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--neutral-8);
+  transition: all var(--transition-fast);
+}
+
+.hgw-history__page-btn:hover:not(:disabled) {
+  border-color: var(--primary-5);
+  color: var(--primary-6);
+}
+
+.hgw-history__page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hgw-history__page-info {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--neutral-7);
+}

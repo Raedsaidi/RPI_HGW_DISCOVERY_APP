@@ -1,0 +1,135 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--font-family);
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Sizes ── */
+.btn--sm {
+  font-size: 12px;
+  padding: 5px 12px;
+  height: 28px;
+}
+
+.btn--md {
+  font-size: 13px;
+  padding: 7px 16px;
+  height: 34px;
+}
+
+.btn--lg {
+  font-size: 14px;
+  padding: 10px 20px;
+  height: 40px;
+}
+
+.btn--full {
+  width: 100%;
+}
+
+/* ── Variants ── */
+.btn--primary {
+  background: var(--primary-6);
+  border-color: var(--primary-6);
+  color: #fff;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--primary-5);
+  border-color: var(--primary-5);
+}
+
+.btn--primary:active:not(:disabled) {
+  background: var(--primary-7);
+  border-color: var(--primary-7);
+}
+
+.btn--secondary {
+  background: var(--neutral-1);
+  border-color: var(--neutral-5);
+  color: var(--neutral-9);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  border-color: var(--primary-5);
+  color: var(--primary-6);
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--neutral-8);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--neutral-3);
+  color: var(--neutral-10);
+}
+
+.btn--text {
+  background: transparent;
+  border-color: transparent;
+  color: var(--primary-6);
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.btn--text:hover:not(:disabled) {
+  color: var(--primary-5);
+}
+
+/* ── Danger ── */
+.btn--danger.btn--primary {
+  background: var(--error-main);
+  border-color: var(--error-main);
+}
+
+.btn--danger.btn--primary:hover:not(:disabled) {
+  background: var(--error-dark);
+  border-color: var(--error-dark);
+}
+
+.btn--danger.btn--secondary {
+  color: var(--error-main);
+  border-color: var(--error-border);
+}
+
+.btn--danger.btn--secondary:hover:not(:disabled) {
+  background: var(--error-light);
+  border-color: var(--error-main);
+}
+
+/* ── Spinner ── */
+.btn__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: btnSpin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.btn--secondary .btn__spinner,
+.btn--ghost .btn__spinner {
+  border-color: rgba(0, 0, 0, 0.15);
+  border-top-color: var(--primary-6);
+}
+
+@keyframes btnSpin {
+  to { transform: rotate(360deg); }
+}

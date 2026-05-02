@@ -1,0 +1,92 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* ── Primary Blue ── */
+  --primary-1: #e6f7ff;
+  --primary-2: #bae7ff;
+  --primary-3: #91d5ff;
+  --primary-4: #69c0ff;
+  --primary-5: #40a9ff;
+  --primary-6: #1890ff;
+  --primary-7: #096dd9;
+  --primary-8: #0050b3;
+  --primary-9: #003a8c;
+
+  /* ── Neutrals ── */
+  --neutral-1: #ffffff;
+  --neutral-2: #fafafa;
+  --neutral-3: #f5f5f5;
+  --neutral-4: #f0f2f5;
+  --neutral-5: #d9d9d9;
+  --neutral-6: #bfbfbf;
+  --neutral-7: #8c8c8c;
+  --neutral-8: #595959;
+  --neutral-9: #434343;
+  --neutral-10: #262626;
+
+  /* ── Success ── */
+  --success-light: #f6ffed;
+  --success-border: #b7eb8f;
+  --success-main: #52c41a;
+  --success-dark: #389e0d;
+
+  /* ── Warning ── */
+  --warning-light: #fff7e6;
+  --warning-border: #ffd591;
+  --warning-main: #fa8c16;
+  --warning-dark: #d46b08;
+
+  /* ── Error ── */
+  --error-light: #fff1f0;
+  --error-border: #ffa39e;
+  --error-main: #f5222d;
+  --error-dark: #cf1322;
+
+  /* ── Device Colors ── */
+  --color-switch: #1890ff;
+  --color-rpi: #722ed1;
+  --color-hgw: #13c2c2;
+  --color-online: #52c41a;
+
+  /* ── Purple ── */
+  --purple-light: #f9f0ff;
+  --purple-border: #d3adf7;
+  --purple-main: #722ed1;
+
+  /* ── Cyan ── */
+  --cyan-light: #e6fffb;
+  --cyan-border: #87e8de;
+  --cyan-main: #13c2c2;
+
+  /* ── Layout ── */
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 64px;
+  --navbar-height: 56px;
+  --page-bg: #f0f2f5;
+  --card-bg: #ffffff;
+  --sidebar-bg: #ffffff;
+  --navbar-bg: #ffffff;
+
+  /* ── Shadows ── */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.03), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0 4px 16px rgba(24, 144, 255, 0.12);
+  --shadow-sidebar: 2px 0 8px rgba(0, 21, 41, 0.08);
+  --shadow-navbar: 0 1px 4px rgba(0, 21, 41, 0.08);
+  --shadow-modal: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-dropdown: 0 4px 16px rgba(0, 0, 0, 0.10);
+
+  /* ── Radius ── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* ── Typography ── */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* ── Transitions ── */
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.2s ease;
+  --transition-slow: 0.3s ease;
+}

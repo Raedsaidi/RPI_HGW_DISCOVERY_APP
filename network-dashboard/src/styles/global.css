@@ -1,0 +1,99 @@
+@import './variables.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--page-bg);
+  color: var(--neutral-10);
+  line-height: 1.5715;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--neutral-3);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--neutral-5);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neutral-6);
+}
+
+/* ── Typography ── */
+h1 { font-size: 24px; font-weight: 600; color: var(--neutral-10); }
+h2 { font-size: 20px; font-weight: 600; color: var(--neutral-10); }
+h3 { font-size: 16px; font-weight: 600; color: var(--neutral-9); }
+h4 { font-size: 14px; font-weight: 600; color: var(--neutral-9); }
+
+p  { font-size: 14px; color: var(--neutral-8); }
+
+a {
+  color: var(--primary-6);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover { color: var(--primary-5); }
+
+/* ── Utility ── */
+.mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.text-muted {
+  color: var(--neutral-7);
+  font-size: 12px;
+}
+
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Page wrapper ── */
+.page-container {
+  padding: 24px;
+  min-height: calc(100vh - var(--navbar-height));
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--neutral-10);
+}
+
+.page-subtitle {
+  font-size: 13px;
+  color: var(--neutral-7);
+  margin-top: 2px;
+}

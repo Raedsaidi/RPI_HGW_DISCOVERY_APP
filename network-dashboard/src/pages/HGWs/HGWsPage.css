@@ -1,0 +1,236 @@
+.hgws-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Summary strip ── */
+.hgws-page__summary {
+  display: flex;
+  align-items: center;
+  background: var(--card-bg);
+  border: 1px solid var(--neutral-5);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 0 24px;
+  height: 64px;
+  width: fit-content;
+  gap: 0;
+  flex-wrap: wrap;
+}
+
+.hgws-page__summary-sep {
+  width: 1px;
+  height: 32px;
+  background: var(--neutral-4);
+  margin: 0 20px;
+}
+
+.hgws-page__summary-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Items réseau cliquables */
+.hgws-page__summary-item--clickable {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+  user-select: none;
+}
+
+.hgws-page__summary-item--clickable:hover {
+  opacity: 0.8;
+  background: var(--neutral-2);
+}
+
+/* Item actif (filtre réseau sélectionné) */
+.hgws-page__summary-item--active {
+  background: var(--neutral-3) !important;
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+
+.hgws-page__summary-val {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hgws-page__summary-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--neutral-7);
+}
+
+/* ── Summary colors ── */
+.hgws-page__summary-item--total {
+  color: var(--cyan-main);
+}
+
+.hgws-page__summary-item--net-a {
+  color: var(--primary-6);
+}
+
+.hgws-page__summary-item--net-b {
+  color: var(--purple-main);
+}
+
+.hgws-page__summary-item--net-c {
+  color: var(--green-main, #52c41a);
+}
+
+.hgws-page__summary-item--net-d {
+  color: var(--orange-main, #fa8c16);
+}
+
+/* ── Filters ── */
+.hgws-page__filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--neutral-4);
+  flex-wrap: wrap;
+}
+
+.hgws-page__filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.hgws-page__filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hgws-page__filter-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--neutral-7);
+  white-space: nowrap;
+}
+
+.hgws-page__select {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--neutral-5);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-family: var(--font-family);
+  color: var(--neutral-9);
+  background: var(--neutral-1);
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+  min-width: 140px;
+}
+
+.hgws-page__select:focus {
+  border-color: var(--primary-5);
+  box-shadow: 0 0 0 2px var(--primary-1);
+}
+
+/* Badge "filtre actif" avec bouton clear */
+.hgws-page__filter-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  background: var(--primary-1);
+  border: 1px solid var(--primary-3);
+  border-radius: 100px;
+  color: var(--primary-7);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.hgws-page__filter-clear:hover {
+  background: var(--primary-2);
+  border-color: var(--primary-5);
+}
+
+/* ── Table cells ── */
+.hgw-table__ip {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cyan-main);
+}
+
+.hgw-table__mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--neutral-8);
+}
+
+.hgw-table__mono--ext {
+  color: var(--primary-7);
+}
+
+.hgw-table__mono--rpi {
+  color: var(--purple-main);
+}
+
+.hgw-table__time {
+  font-size: 12px;
+  color: var(--neutral-7);
+}
+
+.hgw-table__null {
+  color: var(--neutral-5);
+}
+
+/* ── Row actions ── */
+.hgw-table__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.hgw-table__action-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  background: transparent;
+}
+
+.hgw-table__action-btn--view {
+  color: var(--primary-6);
+}
+
+.hgw-table__action-btn--view:hover {
+  background: var(--primary-1);
+}
+
+.hgw-table__action-btn--history {
+  color: var(--cyan-main);
+}
+
+.hgw-table__action-btn--history:hover {
+  background: var(--cyan-light);
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

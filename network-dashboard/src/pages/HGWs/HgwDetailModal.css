@@ -1,0 +1,99 @@
+.hgw-detail__content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hgw-detail__section {
+  border: 1px solid var(--neutral-4);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.hgw-detail__section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  background: var(--neutral-3);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--neutral-7);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--neutral-4);
+}
+
+.hgw-detail__row {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--neutral-4);
+  gap: 12px;
+}
+
+.hgw-detail__row:last-child {
+  border-bottom: none;
+}
+
+.hgw-detail__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--neutral-7);
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.hgw-detail__value {
+  font-size: 13px;
+  color: var(--neutral-10);
+  flex: 1;
+}
+
+.hgw-detail__null {
+  color: var(--neutral-5);
+}
+
+/* ── Memory bar ── */
+.hgw-detail__mem-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.hgw-detail__mem-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--neutral-4);
+  border-radius: 100px;
+  overflow: hidden;
+}
+
+.hgw-detail__mem-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--cyan-main), #36cfc9);
+  border-radius: 100px;
+  transition: width 0.6s ease;
+}
+
+.hgw-detail__mem-pct {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cyan-main);
+  white-space: nowrap;
+}
+/* ── Network badge (remplace l'ancien hgw_type pill) ── */
+.hgw-detail__network-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--cyan-light);
+  color: var(--cyan-main);
+  border: 1px solid var(--cyan-border);
+  padding: 2px 10px;
+  border-radius: 100px;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
