@@ -22,6 +22,7 @@ class Switch(Base):
     uptime = Column(String(128), nullable=True)
     serial_number = Column(String(64), nullable=True)
     model = Column(String(64), nullable=True)
+    port_management = Column(String(64), nullable=True)
 
 
 class SwitchFact(Base):

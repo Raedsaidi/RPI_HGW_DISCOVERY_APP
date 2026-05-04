@@ -10,6 +10,7 @@ class SwitchCreate(BaseModel):
     telnet_user: str = Field(default="admin")
     telnet_pass: str = Field(default="password")
     enabled: bool = Field(default=True)
+    port_management: Optional[str] = Field(None, example="g23")
 
 
 class SwitchUpdate(BaseModel):
@@ -18,6 +19,7 @@ class SwitchUpdate(BaseModel):
     telnet_user: Optional[str] = None
     telnet_pass: Optional[str] = None
     enabled: Optional[bool] = None
+    port_management: Optional[str] = None
 
 
 class SwitchRead(BaseModel):
@@ -32,6 +34,7 @@ class SwitchRead(BaseModel):
     uptime: Optional[str]
     serial_number: Optional[str]
     model: Optional[str]
+    port_management: Optional[str]
     last_seen: Optional[datetime]
     created_at: Optional[datetime]
 

@@ -82,6 +82,7 @@ def create_switch(
         telnet_port=body.telnet_port,
         telnet_user=body.telnet_user,
         telnet_pass=body.telnet_pass,
+        port_management=body.port_management,
     )
 
 

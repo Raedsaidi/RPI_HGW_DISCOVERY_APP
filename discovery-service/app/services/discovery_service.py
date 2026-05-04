@@ -406,8 +406,28 @@ class DiscoveryService:
 
                 self.switch_repo.save_fact(run_id, sw.ip, data)
 
+                # ── Filter MAC entries to ignore management port ──
+                filtered_mac_entries = [
+                    entry for entry in data.mac_entries 
+                    if sw.port_management is None or entry.port != sw.port_management
+                ]
+
+                if len(filtered_mac_entries) != len(data.mac_entries):
+                    logger.info(
+                        "[DISCOVERY] Switch %s: filtered %d management port entries (port=%s)",
+                        sw.ip, len(data.mac_entries) - len(filtered_mac_entries), sw.port_management,
+                        extra={
+                            "run_id": run_id,
+                            "switch_ip": sw.ip,
+                            "action": "switch_mac_filtered",
+                            "total_macs": len(data.mac_entries),
+                            "filtered_macs": len(filtered_mac_entries),
+                            "management_port": sw.port_management,
+                        },
+                    )
+
                 rpi_count_on_switch = 0
-                for entry in data.mac_entries:
+                for entry in filtered_mac_entries:
                     self.switch_repo.save_mac_entry(run_id, sw.ip, entry)
 
                     mac_upper = entry.mac.upper()
@@ -432,7 +452,7 @@ class DiscoveryService:
                     logger,
                     switch_ip=sw.ip,
                     run_id=run_id,
-                    mac_count=len(data.mac_entries),
+                    mac_count=len(filtered_mac_entries),  # Use filtered count
                     rpi_count=rpi_count_on_switch,
                     elapsed_s=sw_elapsed,
                     success=True,

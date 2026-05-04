@@ -164,6 +164,11 @@ const SwitchesPage = () => {
       render: (val) => val || <span className="sw-table__null">—</span>,
     },
     {
+      key: 'port_management',
+      title: 'Port Mgmt',
+      render: (val) => val || <span className="sw-table__null">—</span>,
+    },
+    {
       key: 'last_seen',
       title: 'Last Seen',
       render: (val) =>

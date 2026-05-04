@@ -82,6 +82,7 @@ const SwitchDetailModal = ({ open, onClose, switchData }) => {
             <Row label="MAC Address" value={switchData.mac_address} mono />
             <Row label="Firmware" value={switchData.firmware_version} />
             <Row label="Serial Number" value={switchData.serial_number} />
+            <Row label="Port Management" value={switchData.port_management} />
             <Row label="Uptime" value={switchData.uptime} />
             <Row
               label="Status"

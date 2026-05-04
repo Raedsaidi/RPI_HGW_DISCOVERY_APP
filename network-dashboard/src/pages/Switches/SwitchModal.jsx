@@ -11,6 +11,7 @@ const DEFAULT_FORM = {
   telnet_user: 'admin',
   telnet_pass: '',
   enabled: true,
+  port_management: '',
 }
 
 const Field = ({ label, error, required, children }) => (
@@ -40,6 +41,7 @@ const SwitchModal = ({ open, onClose, onSuccess, mode = 'create', initial }) => 
           telnet_user: initial.telnet_user || 'admin',
           telnet_pass: '',
           enabled: initial.enabled ?? true,
+          port_management: initial.port_management || '',
         })
       } else {
         setForm(DEFAULT_FORM)
@@ -92,6 +94,7 @@ const SwitchModal = ({ open, onClose, onSuccess, mode = 'create', initial }) => 
           telnet_user: form.telnet_user.trim(),
           telnet_pass: form.telnet_pass,
           enabled: form.enabled,
+          port_management: form.port_management.trim() || undefined,
         })
       } else {
         const payload = {}
@@ -102,6 +105,8 @@ const SwitchModal = ({ open, onClose, onSuccess, mode = 'create', initial }) => 
           payload.telnet_user = form.telnet_user.trim()
         if (form.telnet_pass) payload.telnet_pass = form.telnet_pass
         if (form.enabled !== initial.enabled) payload.enabled = form.enabled
+        if (form.port_management !== initial.port_management)
+          payload.port_management = form.port_management.trim() || null
         await switchesApi.update(initial.id, payload)
       }
       onSuccess()
@@ -191,6 +196,16 @@ const SwitchModal = ({ open, onClose, onSuccess, mode = 'create', initial }) => 
               value={form.telnet_pass}
               onChange={(e) => set('telnet_pass', e.target.value)}
               placeholder="••••••••"
+            />
+          </Field>
+
+          {/* Port Management */}
+          <Field label="Port Management" error={errors.port_management}>
+            <input
+              className="sw-modal__input"
+              value={form.port_management}
+              onChange={(e) => set('port_management', e.target.value)}
+              placeholder="e.g. g23"
             />
           </Field>
 

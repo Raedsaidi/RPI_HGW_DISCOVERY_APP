@@ -13,13 +13,14 @@ class SwitchRepository:
     # --- CRUD ---
 
     def create(self, ip: str, name: Optional[str], telnet_port: int,
-               telnet_user: str, telnet_pass: str) -> Switch:
+               telnet_user: str, telnet_pass: str, port_management: Optional[str] = None) -> Switch:
         sw = Switch(
             ip=ip,
             name=name,
             telnet_port=telnet_port,
             telnet_user=telnet_user,
             telnet_pass=telnet_pass,
+            port_management=port_management,
             created_at=datetime.utcnow(),
         )
         self.db.add(sw)
