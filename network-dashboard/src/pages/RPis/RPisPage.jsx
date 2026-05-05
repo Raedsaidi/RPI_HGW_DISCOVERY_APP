@@ -8,6 +8,8 @@ import {
   CheckCircle,
   XCircle,
   Link2,
+  Table2,
+  LayoutList,
 } from 'lucide-react'
 import Card from '@/components/common/Card'
 import Button from '@/components/common/Button'
@@ -19,6 +21,7 @@ import Spinner from '@/components/common/Spinner'
 import RpiDetailModal from './RpiDetailModal'
 import CredentialModal from './CredentialModal'
 import TerminalModal from '@/components/terminal/TerminalModal'
+import SwitchExpanderView from './SwitchExpanderView'
 import { rpisApi } from '@/api/endpoints'
 import { useNotification, NOTIFICATION_MESSAGES } from '@/context/NotificationContext'
 import { getFriendlyMessage } from '@/utils/messageHelper'
@@ -32,6 +35,9 @@ const RPisPage = () => {
   const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
   const { notify } = useNotification()
+
+  /* view mode */
+  const [viewMode, setViewMode] = useState('table') // 'table' | 'switch'
 
   /* filters */
   const [search, setSearch] = useState('')
@@ -55,21 +61,47 @@ const RPisPage = () => {
   const fetchRpis = useCallback(async () => {
     setLoading(true)
     try {
-      const params = { page, page_size: PAGE_SIZE }
-      if (search.trim()) params.search = search.trim()
-      if (filterSsh !== '') params.ssh_success = filterSsh === 'true'
-      if (filterCreds !== '') params.has_custom_creds = filterCreds === 'true'
+      const baseParams = {}
+      if (search.trim()) baseParams.search = search.trim()
+      if (filterSsh !== '') baseParams.ssh_success = filterSsh === 'true'
+      if (filterCreds !== '') baseParams.has_custom_creds = filterCreds === 'true'
 
-      const res = await rpisApi.list(params)
-      setData(res.data.data || [])
-      setTotal(res.data.total || 0)
-      setTotalPages(res.data.total_pages || 1)
+      if (viewMode === 'switch') {
+        const PAGE_SIZE_SWITCH = 100 // max backend
+        let all = []
+        let p = 1
+        let total = 0
+        let totalPages = 1
+
+        while (true) {
+          const res = await rpisApi.list({ ...baseParams, page: p, page_size: PAGE_SIZE_SWITCH })
+          const chunk = res.data.data || []
+          all = all.concat(chunk)
+
+          total = res.data.total || all.length
+          totalPages = res.data.total_pages || 1
+
+          if (p >= totalPages) break
+          p += 1
+        }
+
+        setData(all)
+        setTotal(total)
+        setTotalPages(1) // pas utile en vue switch
+        setPage(1)       // optionnel
+      } else {
+        const PAGE_SIZE = 25
+        const res = await rpisApi.list({ ...baseParams, page, page_size: PAGE_SIZE })
+        setData(res.data.data || [])
+        setTotal(res.data.total || 0)
+        setTotalPages(res.data.total_pages || 1)
+      }
     } catch (e) {
       console.error(e)
     } finally {
       setLoading(false)
     }
-  }, [page, search, filterSsh, filterCreds])
+  }, [page, search, filterSsh, filterCreds, viewMode])
 
   useEffect(() => {
     fetchRpis()
@@ -157,13 +189,21 @@ const RPisPage = () => {
       key: 'mac',
       title: 'MAC Address',
       render: (val) =>
-        val ? <span className="rpi-table__mono">{val}</span> : <span className="rpi-table__null">—</span>,
+        val ? (
+          <span className="rpi-table__mono">{val}</span>
+        ) : (
+          <span className="rpi-table__null">—</span>
+        ),
     },
     {
       key: 'label',
       title: 'Label',
       render: (val) =>
-        val ? <span className="rpi-table__label">{val}</span> : <span className="rpi-table__null">—</span>,
+        val ? (
+          <span className="rpi-table__label">{val}</span>
+        ) : (
+          <span className="rpi-table__null">—</span>
+        ),
     },
     {
       key: 'switch_ip',
@@ -172,7 +212,9 @@ const RPisPage = () => {
         val ? (
           <div className="rpi-table__switch">
             <span className="rpi-table__mono">{val}</span>
-            {row.switch_port && <span className="rpi-table__port">:{row.switch_port}</span>}
+            {row.switch_port && (
+              <span className="rpi-table__port">:{row.switch_port}</span>
+            )}
           </div>
         ) : (
           <span className="rpi-table__null">—</span>
@@ -182,13 +224,23 @@ const RPisPage = () => {
       key: 'hgw_ip',
       title: 'Home Gateway',
       render: (val) =>
-        val ? <span className="rpi-table__mono rpi-table__mono--cyan">{val}</span> : <span className="rpi-table__null">—</span>,
+        val ? (
+          <span className="rpi-table__mono rpi-table__mono--cyan">{val}</span>
+        ) : (
+          <span className="rpi-table__null">—</span>
+        ),
     },
     {
       key: 'last_seen',
       title: 'Last Seen',
       render: (val) =>
-        val ? <span className="rpi-table__time">{dayjs(val).format('MMM D, HH:mm')}</span> : <span className="rpi-table__null">—</span>,
+        val ? (
+          <span className="rpi-table__time">
+            {dayjs(val).format('MMM D, HH:mm')}
+          </span>
+        ) : (
+          <span className="rpi-table__null">—</span>
+        ),
     },
     {
       key: 'last_ssh_success',
@@ -215,7 +267,12 @@ const RPisPage = () => {
       title: 'Custom Creds',
       width: 110,
       align: 'center',
-      render: (val) => (val ? <StatusBadge status={'active'} /> : <StatusBadge status={'disabled'} />),
+      render: (val) =>
+        val ? (
+          <StatusBadge status={'active'} />
+        ) : (
+          <StatusBadge status={'disabled'} />
+        ),
     },
     {
       key: 'actions',
@@ -250,7 +307,11 @@ const RPisPage = () => {
               onClick={() => handleReconnect(row)}
               disabled={busy}
             >
-              {busy ? <RefreshCw size={15} className="spin" /> : <Link2 size={15} />}
+              {busy ? (
+                <RefreshCw size={15} className="spin" />
+              ) : (
+                <Link2 size={15} />
+              )}
             </button>
 
             {row.has_custom_credentials && (
@@ -275,6 +336,7 @@ const RPisPage = () => {
 
   return (
     <div className="rpis-page">
+      {/* ── Header ── */}
       <div className="page-header">
         <div>
           <h2 className="page-title">Raspberry Pi Devices</h2>
@@ -282,11 +344,33 @@ const RPisPage = () => {
             {total} device{total !== 1 ? 's' : ''} registered
           </p>
         </div>
-        <Button variant="secondary" icon={RefreshCw} size="md" onClick={fetchRpis}>
-          Refresh
-        </Button>
+
+        <div className="rpis-page__header-actions">
+          {/* View mode toggle */}
+          <div className="rpis-page__view-toggle">
+            <button
+              className={`rpis-page__view-btn ${viewMode === 'table' ? 'rpis-page__view-btn--active' : ''}`}
+              onClick={() => setViewMode('table')}
+              title="Table view"
+            >
+              <Table2 size={16} />
+            </button>
+            <button
+              className={`rpis-page__view-btn ${viewMode === 'switch' ? 'rpis-page__view-btn--active' : ''}`}
+              onClick={() => setViewMode('switch')}
+              title="Group by switch"
+            >
+              <LayoutList size={16} />
+            </button>
+          </div>
+
+          <Button variant="secondary" icon={RefreshCw} size="md" onClick={fetchRpis}>
+            Refresh
+          </Button>
+        </div>
       </div>
 
+      {/* ── Summary strip ── */}
       <div className="rpis-page__summary">
         <div className="rpis-page__summary-item rpis-page__summary-item--total">
           <Cpu size={16} />
@@ -313,13 +397,24 @@ const RPisPage = () => {
         </div>
       </div>
 
+      {/* ── Main Card ── */}
       <Card padding={false}>
+        {/* Filters */}
         <div className="rpis-page__filters">
-          <SearchBar value={search} onChange={handleSearch} placeholder="Search by IP, MAC, label..." width={300} />
+          <SearchBar
+            value={search}
+            onChange={handleSearch}
+            placeholder="Search by IP, MAC, label..."
+            width={300}
+          />
           <div className="rpis-page__filter-row">
             <div className="rpis-page__filter-group">
               <label className="rpis-page__filter-label">SSH Status</label>
-              <select className="rpis-page__select" value={filterSsh} onChange={(e) => handleSshFilter(e.target.value)}>
+              <select
+                className="rpis-page__select"
+                value={filterSsh}
+                onChange={(e) => handleSshFilter(e.target.value)}
+              >
                 <option value="">All</option>
                 <option value="true">Success</option>
                 <option value="false">Failed</option>
@@ -328,37 +423,75 @@ const RPisPage = () => {
 
             <div className="rpis-page__filter-group">
               <label className="rpis-page__filter-label">Credentials</label>
-              <select className="rpis-page__select" value={filterCreds} onChange={(e) => handleCredsFilter(e.target.value)}>
+              <select
+                className="rpis-page__select"
+                value={filterCreds}
+                onChange={(e) => handleCredsFilter(e.target.value)}
+              >
                 <option value="">All</option>
                 <option value="true">Custom</option>
                 <option value="false">Default</option>
               </select>
             </div>
 
-            <div className="rpis-page__filter-group">
-              <label className="rpis-page__filter-label">Sort</label>
-              <select className="rpis-page__select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-                <option value="ip">IP (A→Z)</option>
-                <option value="last_seen">Last seen (newest)</option>
-                <option value="ssh_failed_first">SSH failed first</option>
-              </select>
-            </div>
+            {/* Sort uniquement pertinent en vue tableau */}
+            {viewMode === 'table' && (
+              <div className="rpis-page__filter-group">
+                <label className="rpis-page__filter-label">Sort</label>
+                <select
+                  className="rpis-page__select"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                >
+                  <option value="ip">IP (A→Z)</option>
+                  <option value="last_seen">Last seen (newest)</option>
+                  <option value="ssh_failed_first">SSH failed first</option>
+                </select>
+              </div>
+            )}
           </div>
         </div>
 
+        {/* Content */}
         {loading ? (
           <Spinner centered text="Loading RPis..." />
-        ) : (
+        ) : viewMode === 'table' ? (
           <>
-            <Table columns={columns} data={displayData} rowKey="id" emptyText="No RPi devices found" />
+            <Table
+              columns={columns}
+              data={displayData}
+              rowKey="id"
+              emptyText="No RPi devices found"
+            />
             {total > 0 && (
-              <Pagination page={page} totalPages={totalPages} total={total} pageSize={PAGE_SIZE} onChange={setPage} />
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                total={total}
+                pageSize={PAGE_SIZE}
+                onChange={setPage}
+              />
             )}
           </>
+        ) : (
+          <SwitchExpanderView
+            data={displayData}
+            reconnectingIp={reconnectingIp}
+            onDetail={setDetailTarget}
+            onCred={setCredTarget}
+            onReconnect={handleReconnect}
+            onDeleteCreds={handleDeleteCreds}
+            onTerminal={setTerminalTarget}
+          />
         )}
       </Card>
 
-      <RpiDetailModal open={!!detailTarget} onClose={() => setDetailTarget(null)} rpiData={detailTarget} />
+      {/* ── Modals ── */}
+      <RpiDetailModal
+        open={!!detailTarget}
+        onClose={() => setDetailTarget(null)}
+        rpiData={detailTarget}
+      />
 
       <CredentialModal
         open={!!credTarget}
@@ -370,7 +503,6 @@ const RPisPage = () => {
         }}
       />
 
-      {/* Terminal (autoStart => déjà connecté) */}
       <TerminalModal
         open={!!terminalTarget}
         onClose={() => setTerminalTarget(null)}

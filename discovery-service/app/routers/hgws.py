@@ -96,8 +96,8 @@ def get_hgw(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_read_access),
 ):
-    """Get details for a specific HGW."""
-    hgw = HgwRepository(db).get_by_ip(ip)
+    """Get details for a specific HGW (by IP or serial)."""
+    hgw = HgwRepository(db).get_by_identifier(ip)
     if not hgw:
         raise HTTPException(status_code=404, detail="HGW not found.")
     return hgw
@@ -112,8 +112,12 @@ def get_hgw_history(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_read_access),
 ):
-    """Get historical DeviceInfo facts for a HGW."""
-    q = db.query(HgwFact).filter(HgwFact.hgw_ip == ip)
+    """Get historical DeviceInfo facts for a HGW (by IP or serial)."""
+    hgw = HgwRepository(db).get_by_identifier(ip)
+    if hgw and hgw.serial_number:
+        q = db.query(HgwFact).filter(HgwFact.serial_number == hgw.serial_number)
+    else:
+        q = db.query(HgwFact).filter(HgwFact.hgw_ip == ip)
 
     if run_id:
         q = q.filter(HgwFact.run_id == run_id)

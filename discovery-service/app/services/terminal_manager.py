@@ -22,7 +22,8 @@ from app.models.hgw import Hgw
 from app.models.switch import Switch
 
 # ── Policy ─────────────────────────────────────────────────────────────
-IDLE_TTL_SECONDS = 20 * 60
+IDLE_TTL_SECONDS = 20 * 60         
+INACTIVITY_TTL_SECONDS = 5 * 60     
 MAX_SESSIONS_PER_USER = 5
 BUFFER_MAX_CHUNKS = 4000
 
@@ -68,7 +69,7 @@ def ssh_connect_client(
     password: str,
     port: int = 22,
     tunnel: Optional[paramiko.SSHClient] = None,
-    timeout: int = 15,
+    timeout: int = 60,
 ) -> paramiko.SSHClient:
     sock = None
     if tunnel is not None:
@@ -110,7 +111,7 @@ class BaseTerminalSession:
     target: str       # ip or switch_id
 
     created_at: datetime = field(default_factory=utcnow)
-    last_activity_at: datetime = field(default_factory=utcnow)
+    last_activity_at: datetime = field(default_factory=utcnow)  # ✅ only updated by input/output
 
     status: str = "connecting"  # connecting|ready|error|closed
     error: Optional[str] = None
@@ -125,6 +126,7 @@ class BaseTerminalSession:
     _loop: Optional[asyncio.AbstractEventLoop] = field(default=None, repr=False)
 
     def touch(self):
+        """Activity = input/output only."""
         self.last_activity_at = utcnow()
 
     def attached_count(self) -> int:
@@ -132,17 +134,17 @@ class BaseTerminalSession:
             return len(self.clients)
 
     def add_client(self, ws):
+        # ✅ attach is NOT considered "activity"
         with self._lock:
             self.clients.add(ws)
             self.detached_since = None
-        self.touch()
 
     def remove_client(self, ws):
+        # ✅ detach is NOT considered "activity"
         with self._lock:
             self.clients.discard(ws)
             if len(self.clients) == 0:
                 self.detached_since = utcnow()
-        self.touch()
 
     def push_buffer(self, text: str):
         if text:
@@ -186,13 +188,11 @@ class BaseTerminalSession:
 
 @dataclass
 class SshTerminalSession(BaseTerminalSession):
-    # SSH chain
     bastion_client: Optional[paramiko.SSHClient] = None
-    mid_client: Optional[paramiko.SSHClient] = None     # for HGW: RPi client; for RPi: not used
+    mid_client: Optional[paramiko.SSHClient] = None     # for HGW: RPi client
     target_client: Optional[paramiko.SSHClient] = None  # RPi/HGW
     channel: Optional[paramiko.Channel] = None
 
-    # extra metadata
     via_rpi_ip: Optional[str] = None  # only for HGW
 
     def _reader_loop(self):
@@ -215,9 +215,13 @@ class SshTerminalSession(BaseTerminalSession):
                     if not data:
                         time.sleep(0.02)
                         continue
+
                     text = data.decode("utf-8", errors="ignore")
                     self.push_buffer(text)
+
+                    # ✅ output counts as activity
                     self.touch()
+
                     if self._loop:
                         asyncio.run_coroutine_threadsafe(
                             self.send_to_all({"type": "output", "data": text}),
@@ -246,16 +250,19 @@ class SshTerminalSession(BaseTerminalSession):
             raise ConnectionError("Terminal channel closed")
         if len(data) > 8000:
             data = data[:8000]
+
         chan.send(data)
+
+        # ✅ input counts as activity
         self.touch()
 
     def resize(self, cols: int, rows: int):
+        # ✅ resize does NOT count as activity
         chan = self.channel
         if chan is None or chan.closed:
             return
         try:
             chan.resize_pty(width=int(cols), height=int(rows))
-            self.touch()
         except Exception:
             pass
 
@@ -269,7 +276,6 @@ class SshTerminalSession(BaseTerminalSession):
         except Exception:
             pass
 
-        # close in reverse order
         for c in [self.target_client, self.mid_client, self.bastion_client]:
             try:
                 if c:
@@ -309,7 +315,10 @@ class TelnetTerminalSession(BaseTerminalSession):
                 if chunk:
                     text = chunk.decode("utf-8", errors="ignore")
                     self.push_buffer(text)
+
+                    # ✅ output counts as activity
                     self.touch()
+
                     if self._loop:
                         asyncio.run_coroutine_threadsafe(
                             self.send_to_all({"type": "output", "data": text}),
@@ -338,10 +347,11 @@ class TelnetTerminalSession(BaseTerminalSession):
         if len(data) > 8000:
             data = data[:8000]
         self.tn.write(data.encode("utf-8", errors="ignore"))
+
+        # ✅ input counts as activity
         self.touch()
 
     def resize(self, cols: int, rows: int):
-        # telnet: ignore
         return
 
     def close(self):
@@ -383,11 +393,17 @@ class TerminalManager:
 
             with self._lock:
                 for sid, sess in list(self._sessions.items()):
-                    if sess.detached_since is None:
-                        continue
-                    age = (now - sess.detached_since).total_seconds()
-                    if age >= IDLE_TTL_SECONDS:
+                    # ✅ NEW: close if no activity for 5 minutes (even if attached)
+                    idle_age = (now - sess.last_activity_at).total_seconds()
+                    if idle_age >= INACTIVITY_TTL_SECONDS:
                         to_close.append(sid)
+                        continue
+
+                    # Old: close if detached too long
+                    if sess.detached_since is not None:
+                        detached_age = (now - sess.detached_since).total_seconds()
+                        if detached_age >= IDLE_TTL_SECONDS:
+                            to_close.append(sid)
 
             for sid in to_close:
                 self.force_close(sid)
@@ -429,7 +445,6 @@ class TerminalManager:
                 "last_activity_at": s.last_activity_at.isoformat(),
                 "attached": s.attached_count(),
             }
-            # HGW extra
             if isinstance(s, SshTerminalSession) and s.device_type == "hgw":
                 item["via_rpi_ip"] = s.via_rpi_ip
                 item["hgw_ip"] = s.target
@@ -467,7 +482,7 @@ class TerminalManager:
             password=settings.PISERVER_PASS,
             port=22,
             tunnel=None,
-            timeout=15,
+            timeout=60,
         )
         sess.bastion_client = bastion
 
@@ -482,7 +497,7 @@ class TerminalManager:
                     password=p,
                     port=22,
                     tunnel=bastion,
-                    timeout=15,
+                    timeout=60,
                 )
                 break
             except Exception as e:
@@ -516,11 +531,10 @@ class TerminalManager:
             password=settings.PISERVER_PASS,
             port=22,
             tunnel=None,
-            timeout=15,
+            timeout=60,
         )
         sess.bastion_client = bastion
 
-        # Tunnel to switch:port and login with telnet prompts
         transport = bastion.get_transport()
         if transport is None:
             sess.close()
@@ -539,7 +553,6 @@ class TerminalManager:
         tn.eof = False
         tn.irawq = 0
 
-        # Login sequence
         idx, _, _ = tn.expect([b"Username:", b"username:", b"User:", b"login:"], timeout=20)
         if idx == -1:
             sess.close()
@@ -566,6 +579,12 @@ class TerminalManager:
         if self._count_user_sessions(owner) >= MAX_SESSIONS_PER_USER:
             raise PermissionError("Max sessions per user reached (5). Close a session first.")
 
+        hgw_row = db.query(Hgw).filter(Hgw.serial_number == hgw_ip).first()
+        if hgw_row:
+            if not via_rpi_ip:
+                via_rpi_ip = hgw_row.via_rpi_ip
+            hgw_ip = hgw_row.ip
+
         via = self._auto_select_via_rpi(db, hgw_ip, via_rpi_ip)
         if not via:
             raise ValueError("Cannot auto-select via_rpi_ip for this HGW")
@@ -573,18 +592,16 @@ class TerminalManager:
         sid = str(uuid4())
         sess = SshTerminalSession(id=sid, owner=owner, device_type="hgw", target=hgw_ip, via_rpi_ip=via)
 
-        # bastion
         bastion = ssh_connect_client(
             host=settings.PISERVER_HOST,
             username=settings.PISERVER_USER,
             password=settings.PISERVER_PASS,
             port=22,
             tunnel=None,
-            timeout=15,
+            timeout=60,
         )
         sess.bastion_client = bastion
 
-        # rpi via bastion
         chain = self._rpi_creds_chain(db, via)
         last_err = None
         rpi_client = None
@@ -596,7 +613,7 @@ class TerminalManager:
                     password=p,
                     port=22,
                     tunnel=bastion,
-                    timeout=15,
+                    timeout=60,
                 )
                 break
             except Exception as e:
@@ -609,17 +626,16 @@ class TerminalManager:
 
         sess.mid_client = rpi_client
 
-        # hgw via rpi
         hgw_client = ssh_connect_client(
             host=hgw_ip,
             username=settings.HGW_SSH_USER,
             password=settings.HGW_SSH_PASS,
             port=22,
             tunnel=rpi_client,
-            timeout=20,
+            timeout=60,
         )
         sess.target_client = hgw_client
-        sess.channel = open_pty_shell(hgw_client, timeout=20)
+        sess.channel = open_pty_shell(hgw_client, timeout=60)
 
         self.register(sess)
         return sess
@@ -643,12 +659,10 @@ class TerminalManager:
         if via_rpi_ip:
             return via_rpi_ip
 
-        # 1) from HGW table
         h = db.query(Hgw).filter(Hgw.ip == hgw_ip).first()
         if h and h.via_rpi_ip:
             return h.via_rpi_ip
 
-        # 2) best candidate: last_ssh_success true and matching hgw
         cand = (
             db.query(Rpi)
             .filter(Rpi.hgw_ip == hgw_ip, Rpi.last_ssh_success == True)  # noqa: E712
@@ -658,7 +672,6 @@ class TerminalManager:
         if cand:
             return cand.ip_mgmt
 
-        # 3) fallback: any rpi with that hgw
         cand2 = (
             db.query(Rpi)
             .filter(Rpi.hgw_ip == hgw_ip)

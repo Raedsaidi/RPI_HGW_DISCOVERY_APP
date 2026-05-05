@@ -39,8 +39,11 @@ const HGWsPage = () => {
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 25
 
+  const getHgwRowKey = (row) =>
+    row?.via_rpi_ip ? `${row.ip}|${row.via_rpi_ip}` : row?.ip
+
   /* reconnect */
-  const [reconnectingIp, setReconnectingIp] = useState(null)
+  const [reconnectingKey, setReconnectingKey] = useState(null)
 
   /* modals */
   const [detailTarget, setDetailTarget] = useState(null)
@@ -95,8 +98,9 @@ const HGWsPage = () => {
 
     const ip = row.ip
     const params = row.via_rpi_ip ? { via_rpi_ip: row.via_rpi_ip } : undefined
+    const targetKey = getHgwRowKey(row)
 
-    setReconnectingIp(ip)
+    setReconnectingKey(targetKey)
     notify('info', `Reconnecting HGW ${ip}...`)
 
     try {
@@ -109,7 +113,7 @@ const HGWsPage = () => {
       console.error(e)
       notify('error', getFriendlyMessage('error', e?.response?.data?.detail || 'Reconnect failed'))
     } finally {
-      setReconnectingIp(null)
+      setReconnectingKey(null)
     }
   }
 
@@ -120,7 +124,7 @@ const HGWsPage = () => {
       title: 'Gateway IP',
       width: 160,
       render: (val, row) => {
-        const busy = reconnectingIp === row.ip
+        const busy = reconnectingKey === getHgwRowKey(row)
         return (
           <button
             type="button"
@@ -186,7 +190,7 @@ const HGWsPage = () => {
       width: 120,
       align: 'right',
       render: (_, row) => {
-        const busy = reconnectingIp === row.ip
+        const busy = reconnectingKey === getHgwRowKey(row)
         return (
           <div className="hgw-table__actions">
             <button
@@ -351,8 +355,11 @@ const HGWsPage = () => {
         title={`Terminal — HGW ${terminalTarget?.ip || ''}`}
         deviceType="hgw"
         targetLabel={terminalTarget?.ip || ''}
-        targetKey={terminalTarget?.ip || ''}
-        apiOpen={() => hgwsApi.terminalOpen(terminalTarget.ip)}   // via_rpi auto côté backend
+        targetKey={terminalTarget ? getHgwRowKey(terminalTarget) : ''}
+        apiOpen={() => hgwsApi.terminalOpen(
+          terminalTarget.ip,
+          terminalTarget?.via_rpi_ip ? { via_rpi_ip: terminalTarget.via_rpi_ip } : undefined
+        )}
         apiList={() => hgwsApi.terminalList(terminalTarget.ip)}
         apiClose={(sid) => hgwsApi.terminalClose(sid)}
         wsPathForSession={(sid) => `/api/v1/hgws/terminal/${sid}/ws`}

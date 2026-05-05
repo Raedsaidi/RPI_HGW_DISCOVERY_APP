@@ -77,8 +77,8 @@ const parseTopology = (data) => {
 
   const rpis = Array.from(rpiByIp.values())
 
-  // HGW dedupe (ip -> nodeId)
-  const hgwIdByIp = new Map()
+  // HGW dedupe by unique device identity (serial if available, else ip+via_rpi)
+  const hgwIdByKey = new Map()
 
   rpis.forEach((rpi) => {
     const id = `rpi-${rpi.ip_mgmt}`
@@ -103,20 +103,26 @@ const parseTopology = (data) => {
 
     if (rpi.hgw?.ip) {
       const hgwIp = rpi.hgw.ip
-      let hgwNodeId = hgwIdByIp.get(hgwIp)
+      const hgwKey = rpi.hgw.serial_number
+        ? `serial:${rpi.hgw.serial_number}`
+        : `ip:${hgwIp}|via:${rpi.ip_mgmt}`
+      let hgwNodeId = hgwIdByKey.get(hgwKey)
 
       if (!hgwNodeId) {
-        hgwNodeId = `hgw-${hgwIp}`
-        hgwIdByIp.set(hgwIp, hgwNodeId)
+        const label = rpi.hgw.serial_number
+          ? `${rpi.hgw.model_name || hgwIp} (${rpi.hgw.serial_number})`
+          : rpi.hgw.model_name || hgwIp
+
+        hgwNodeId = `hgw-${hgwKey}`
+        hgwIdByKey.set(hgwKey, hgwNodeId)
 
         nodes.push({
           id: hgwNodeId,
           ip: hgwIp,
-          label: rpi.hgw.model_name || hgwIp,
+          label,
           type: 'hgw',
           data: rpi.hgw,
         })
-        nodeMap.set(hgwIp, hgwNodeId)
       }
 
       links.push({
@@ -219,11 +225,24 @@ const TopologyPage = () => {
           const swRpis = sw.rpis || []
           totalRpis += swRpis.length
           swRpis.forEach((rpi) => {
-            if (rpi?.hgw?.ip) hgwSet.add(rpi.hgw.ip)
+            if (rpi?.hgw?.ip) {
+              const hgwKey = rpi.hgw.serial_number
+                ? `serial:${rpi.hgw.serial_number}`
+                : `ip:${rpi.hgw.ip}|via:${rpi.ip_mgmt}`
+              hgwSet.add(hgwKey)
+            }
           })
         })
 
         totalRpis += (data.unassigned_rpis || []).length
+        ;(data.unassigned_rpis || []).forEach((rpi) => {
+          if (rpi?.hgw?.ip) {
+            const hgwKey = rpi.hgw.serial_number
+              ? `serial:${rpi.hgw.serial_number}`
+              : `ip:${rpi.hgw.ip}|via:${rpi.ip_mgmt}`
+            hgwSet.add(hgwKey)
+          }
+        })
 
         setStats({
           switches: (data.switches || []).length,

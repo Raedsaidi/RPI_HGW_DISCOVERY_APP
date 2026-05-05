@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     # HGW defaults
     HGW_SSH_USER: str = "root"
     HGW_SSH_PASS: str = "sah"
+    HGW_TELNET_PORT: int = 23
 
     # Scheduler
     SYNC_HOUR: int = 4

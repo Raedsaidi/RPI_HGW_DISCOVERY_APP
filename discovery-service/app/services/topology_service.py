@@ -83,7 +83,31 @@ class TopologyService:
 
         # HGW facts for this run
         hgw_facts = self.hgw_repo.get_facts_for_run(run_id)
-        hgw_fact_map = {f.hgw_ip: f for f in hgw_facts}
+        hgw_fact_path_map: dict[str, object] = {}
+        hgw_fact_ip_map: dict[str, object] = {}
+        hgw_ip_counts: dict[str, int] = {}
+
+        for fact in hgw_facts:
+            if fact.hgw_ip:
+                hgw_ip_counts[fact.hgw_ip] = hgw_ip_counts.get(fact.hgw_ip, 0) + 1
+
+        for fact in hgw_facts:
+            if fact.serial_number:
+                key = f"serial:{fact.serial_number}"
+                existing = hgw_fact_path_map.get(key)
+                if not existing or (fact.collected_at and existing.collected_at and fact.collected_at > existing.collected_at):
+                    hgw_fact_path_map[key] = fact
+
+            if fact.hgw_ip and fact.via_rpi_ip:
+                path_key = f"{fact.hgw_ip}|{fact.via_rpi_ip}"
+                existing = hgw_fact_path_map.get(path_key)
+                if not existing or (fact.collected_at and existing.collected_at and fact.collected_at > existing.collected_at):
+                    hgw_fact_path_map[path_key] = fact
+
+            if fact.hgw_ip and hgw_ip_counts.get(fact.hgw_ip, 0) == 1:
+                existing_ip = hgw_fact_ip_map.get(fact.hgw_ip)
+                if not existing_ip or (fact.collected_at and existing_ip.collected_at and fact.collected_at > existing_ip.collected_at):
+                    hgw_fact_ip_map[fact.hgw_ip] = fact
 
         # Errors
         errors = self.discovery_repo.get_errors_for_run(run_id)
@@ -119,7 +143,11 @@ class TopologyService:
 
                 # hgw_ip vient maintenant de ip r s (valeur réelle)
                 hgw_ip = rpi_fact.hgw_ip if rpi_fact else None
-                hgw_fact = hgw_fact_map.get(hgw_ip) if hgw_ip else None
+                hgw_fact = None
+                if hgw_ip:
+                    hgw_fact = hgw_fact_path_map.get(f"{hgw_ip}|{rpi_ip}")
+                    if not hgw_fact:
+                        hgw_fact = hgw_fact_ip_map.get(hgw_ip)
 
                 rpis_on_switch.append({
                     "ip_mgmt": rpi_ip,

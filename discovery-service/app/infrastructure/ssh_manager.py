@@ -23,7 +23,7 @@ class SSHSession:
         password: str,
         port: int = 22,
         tunnel: Optional[paramiko.SSHClient] = None,
-        timeout: int = 15,
+        timeout: int = 60,
     ):
         self.host = host
         self.username = username
@@ -109,7 +109,7 @@ class SSHSession:
     def execute(
         self,
         command: str,
-        timeout: int = 30,
+        timeout: int = 60,
         idle_timeout: float = 2.0,
     ) -> Tuple[bool, str]:
         """Execute a command on the persistent shell."""
@@ -219,7 +219,7 @@ class SSHPool:
         password: str,
         port: int = 22,
         tunnel: Optional[paramiko.SSHClient] = None,
-        timeout: int = 15,
+        timeout: int = 60,
     ) -> SSHSession:
         tunnel_id = id(tunnel) if tunnel is not None else None
         key = (host, port, username, password, tunnel_id)

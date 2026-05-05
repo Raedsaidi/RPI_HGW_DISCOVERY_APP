@@ -224,3 +224,43 @@
 .rpi-table__action-btn--delete:hover {
   background: var(--error-light);
 }
+.rpis-page__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rpis-page__view-toggle {
+  display: flex;
+  align-items: center;
+  background: var(--neutral-2);
+  border: 1px solid var(--neutral-4);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 2px;
+}
+
+.rpis-page__view-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--neutral-6);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.rpis-page__view-btn:hover {
+  color: var(--neutral-8);
+  background: var(--neutral-3);
+}
+
+.rpis-page__view-btn--active {
+  background: var(--card-bg);
+  color: var(--primary-6);
+  box-shadow: var(--shadow-card);
+}

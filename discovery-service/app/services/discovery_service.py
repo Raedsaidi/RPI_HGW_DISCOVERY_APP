@@ -1,6 +1,5 @@
 # discovery-service/app/services/discovery_service.py
 import ipaddress
-import ipaddress
 import json
 import logging
 import time
@@ -24,7 +23,7 @@ from app.infrastructure.hgw_client import HgwClient       # ← import unique ic
 from app.infrastructure.netgear_client import NetgearClient  # ← import unique ici
 from app.infrastructure.rpi_client import RpiClient
 from app.infrastructure.ssh_manager import SSHPool, SSHSession
-from app.infrastructure.telnet_manager import TelnetPool
+from app.infrastructure.telnet_manager import HgwTelnetSession, TelnetPool
 from app.parsers.piserver_parser import parse_piserver
 from app.repositories.discovery_repo import DiscoveryRepository
 from app.repositories.hgw_repo import HgwRepository
@@ -203,7 +202,7 @@ class DiscoveryService:
             password=settings.PISERVER_PASS,
             port=22,
             tunnel=None,
-            timeout=15,
+            timeout=60,
         )
         ok, msg   = bastion_session.connect()
         elapsed   = time.perf_counter() - start
@@ -258,7 +257,7 @@ class DiscoveryService:
         start = time.perf_counter()
 
         ok, content = bastion_session.execute(
-            f"cat {settings.PISERVER_FILE}", timeout=15
+            f"cat {settings.PISERVER_FILE}", timeout=60
         )
         elapsed = time.perf_counter() - start
 
@@ -364,7 +363,7 @@ class DiscoveryService:
                     username=sw.telnet_user,
                     password=sw.telnet_pass,
                     bastion_client=bastion_client,
-                    timeout=20,
+                    timeout=60,
                 )
 
                 if not telnet_sess.connected:
@@ -505,7 +504,7 @@ class DiscoveryService:
         """
         SSH to each RPi through bastion (with credential fallback).
         Collect metrics, OS info, network interfaces.
-        Returns: {hgw_ip: via_rpi_ip}
+        Returns: {"<hgw_ip>|<via_rpi_ip>": (hgw_ip, via_rpi_ip)}
         """
         rpi_ips = sorted(rpi_to_switch.keys(), key=ipaddress.ip_address)
 
@@ -647,8 +646,9 @@ class DiscoveryService:
 
                 # ── Queue HGW for collection ───────────────────
                 if collected.hgw_ip:
-                    if collected.hgw_ip not in hgw_targets:
-                        hgw_targets[collected.hgw_ip] = rpi_ip
+                    hgw_key = f"{collected.hgw_ip}|{rpi_ip}"
+                    if hgw_key not in hgw_targets:
+                        hgw_targets[hgw_key] = (collected.hgw_ip, rpi_ip)
                         logger.debug(
                             "[DISCOVERY] HGW %s queued via RPi %s",
                             collected.hgw_ip, rpi_ip,
@@ -767,7 +767,7 @@ class DiscoveryService:
             },
         )
 
-        for hgw_ip, via_rpi_ip in hgw_targets.items():
+        for hgw_ip, via_rpi_ip in hgw_targets.values():
             hgw_start = time.perf_counter()
 
             logger.info(
@@ -811,30 +811,67 @@ class DiscoveryService:
                     password=settings.HGW_SSH_PASS,
                     port=22,
                     tunnel=rpi_client_obj,
-                    timeout=20,
+                    timeout=60,
                 )
+                hgw_conn = hgw_session
+                telnet_fallback = None
 
-                if not hgw_session.connected:
-                    connect_start   = time.perf_counter()
-                    ok_h, err_h     = hgw_session.connect()
-                    connect_elapsed = time.perf_counter() - connect_start
+                try:
+                    if not hgw_session.connected:
+                        connect_start   = time.perf_counter()
+                        ok_h, err_h     = hgw_session.connect()
+                        connect_elapsed = time.perf_counter() - connect_start
 
-                    log_ssh_connect(
-                        logger,
-                        host=hgw_ip,
-                        user=settings.HGW_SSH_USER,
-                        success=ok_h,
-                        elapsed_s=connect_elapsed,
-                        error=err_h if not ok_h else None,
-                        via=via_rpi_ip,
+                        log_ssh_connect(
+                            logger,
+                            host=hgw_ip,
+                            user=settings.HGW_SSH_USER,
+                            success=ok_h,
+                            elapsed_s=connect_elapsed,
+                            error=err_h if not ok_h else None,
+                            via=via_rpi_ip,
+                        )
+
+                        if not ok_h:
+                            logger.warning(
+                                "[DISCOVERY] HGW SSH failed for %s, trying Telnet fallback: %s",
+                                hgw_ip, err_h,
+                                extra={
+                                    "run_id": run_id,
+                                    "hgw_ip": hgw_ip,
+                                    "rpi_ip": via_rpi_ip,
+                                    "action": "hgw_ssh_failed",
+                                },
+                            )
+                            telnet_fallback = HgwTelnetSession(
+                                hgw_ip=hgw_ip,
+                                hgw_port=settings.HGW_TELNET_PORT,
+                                username=settings.HGW_SSH_USER,
+                                password=settings.HGW_SSH_PASS,
+                                tunnel_client=rpi_client_obj,
+                                timeout=60,
+                            )
+                            ok_t, err_t = telnet_fallback.connect()
+                            if not ok_t:
+                                raise ConnectionError(
+                                    f"HGW SSH failed: {err_h}; Telnet fallback failed: {err_t}"
+                                )
+                            hgw_conn = telnet_fallback
+
+                    # ── Collect HGW DeviceInfo ─────────────────────
+                    hgw_client = HgwClient(hgw_conn)
+                    hgw_data   = hgw_client.collect_deviceinfo(hgw_ip, via_rpi_ip)
+                finally:
+                    if telnet_fallback is not None:
+                        telnet_fallback.close()
+
+                # ── Persist HGW identity / path before saving facts ──
+                if hgw_data.serial_number:
+                    self.hgw_repo.upsert(
+                        hgw_data.hgw_ip,
+                        via_rpi_ip=hgw_data.via_rpi_ip,
+                        serial_number=hgw_data.serial_number,
                     )
-
-                    if not ok_h:
-                        raise ConnectionError(f"HGW SSH failed: {err_h}")
-
-                # ── Collect HGW DeviceInfo ─────────────────────
-                hgw_client = HgwClient(hgw_session)
-                hgw_data   = hgw_client.collect_deviceinfo(hgw_ip, via_rpi_ip)
 
                 # ── Save HGW fact ──────────────────────────────
                 self.hgw_repo.save_fact(run_id, hgw_data)
@@ -842,7 +879,7 @@ class DiscoveryService:
                 hgw_elapsed = time.perf_counter() - hgw_start
 
                 if hgw_data.success:
-                    self.hgw_repo.update_from_fact(hgw_ip, hgw_data)
+                    self.hgw_repo.update_from_fact(hgw_data)
                     log_hgw_collect(
                         logger,
                         hgw_ip=hgw_ip,
@@ -989,7 +1026,7 @@ class DiscoveryService:
                 password=ssh_pass,
                 port=22,
                 tunnel=bastion_client,
-                timeout=15,
+                timeout=60,
             )
 
             if rpi_session.connected:

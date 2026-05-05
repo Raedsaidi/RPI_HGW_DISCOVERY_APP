@@ -10,33 +10,78 @@ class HgwRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def upsert(self, ip: str, via_rpi_ip: Optional[str] = None) -> Hgw:
+    def _find_existing(self, ip: str, via_rpi_ip: Optional[str], serial_number: Optional[str]) -> Optional[Hgw]:
+        if serial_number:
+            hgw = self.db.query(Hgw).filter(Hgw.serial_number == serial_number).first()
+            if hgw:
+                return hgw
+
+        if ip and via_rpi_ip:
+            hgw = (
+                self.db.query(Hgw)
+                .filter(Hgw.ip == ip, Hgw.via_rpi_ip == via_rpi_ip)
+                .first()
+            )
+            if hgw:
+                return hgw
+
+        if ip and not via_rpi_ip:
+            return self.db.query(Hgw).filter(Hgw.ip == ip).first()
+
+        return None
+
+    def upsert(
+        self,
+        ip: str,
+        via_rpi_ip: Optional[str] = None,
+        serial_number: Optional[str] = None,
+    ) -> Hgw:
         """
         Crée ou met à jour une HGW.
 
-        MODIFICATION : suppression de la logique hgw_type hardcodée.
-        L'IP de la gateway vient maintenant de 'ip r s' (valeur réelle).
+        La clé primaire logique est désormais le serial_number quand il est connu.
+        Sinon on utilise ip + via_rpi_ip pour distinguer plusieurs HGW partageant la même IP.
         """
-        hgw = self.db.query(Hgw).filter(Hgw.ip == ip).first()
+        hgw = self._find_existing(ip, via_rpi_ip, serial_number)
         if not hgw:
             hgw = Hgw(
                 ip=ip,
+                via_rpi_ip=via_rpi_ip,
+                serial_number=serial_number,
                 created_at=datetime.utcnow(),
             )
             self.db.add(hgw)
-
-        if via_rpi_ip:
-            hgw.via_rpi_ip = via_rpi_ip
+        else:
+            if ip:
+                hgw.ip = ip
+            if via_rpi_ip:
+                hgw.via_rpi_ip = via_rpi_ip
+            if serial_number:
+                hgw.serial_number = serial_number
 
         self.db.commit()
         self.db.refresh(hgw)
         return hgw
 
-    def update_from_fact(self, ip: str, data: HgwCollectedData) -> None:
+    def update_from_fact(self, data: HgwCollectedData) -> None:
         """Met à jour les infos HGW depuis les données collectées."""
-        hgw = self.db.query(Hgw).filter(Hgw.ip == ip).first()
+        hgw = None
+        if data.serial_number:
+            hgw = self.db.query(Hgw).filter(Hgw.serial_number == data.serial_number).first()
+
+        if not hgw and data.hgw_ip and data.via_rpi_ip:
+            hgw = (
+                self.db.query(Hgw)
+                .filter(Hgw.ip == data.hgw_ip, Hgw.via_rpi_ip == data.via_rpi_ip)
+                .first()
+            )
+
         if not hgw:
             return
+
+        hgw.ip = data.hgw_ip or hgw.ip
+        if data.via_rpi_ip:
+            hgw.via_rpi_ip = data.via_rpi_ip
 
         hgw.manufacturer = data.manufacturer
         hgw.model_name = data.model_name
@@ -50,6 +95,28 @@ class HgwRepository:
         hgw.last_seen = datetime.utcnow()
         hgw.updated_at = datetime.utcnow()
         self.db.commit()
+
+    def get_by_identifier(self, identifier: str) -> Optional[Hgw]:
+        if not identifier:
+            return None
+
+        hgw = self.db.query(Hgw).filter(Hgw.serial_number == identifier).first()
+        if hgw:
+            return hgw
+
+        return self.db.query(Hgw).filter(Hgw.ip == identifier).first()
+
+    def get_by_serial(self, serial_number: str) -> Optional[Hgw]:
+        if not serial_number:
+            return None
+        return self.db.query(Hgw).filter(Hgw.serial_number == serial_number).first()
+
+    def get_by_ip_and_via(self, ip: str, via_rpi_ip: str) -> Optional[Hgw]:
+        return (
+            self.db.query(Hgw)
+            .filter(Hgw.ip == ip, Hgw.via_rpi_ip == via_rpi_ip)
+            .first()
+        )
 
     def save_fact(self, run_id: int, data: HgwCollectedData) -> HgwFact:
         """Save HGW fact immediately (one-by-one commit)."""
