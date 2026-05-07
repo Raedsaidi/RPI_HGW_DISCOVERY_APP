@@ -40,7 +40,6 @@ class HgwFact(Base):
 
     # NEW: clé d’instance HGW (MAC gateway ou fallback switch|ip)
     instance_key = Column(String(64), nullable=True)
-    
 
     collected_at = Column(DateTime, default=datetime.utcnow)
 

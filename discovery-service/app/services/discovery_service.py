@@ -457,7 +457,7 @@ class DiscoveryService:
                     tgt["via_rpis"].add(rpi_ip)
 
                     if instance_key not in seen_hgw_upsert:
-                        self.hgw_repo.upsert(collected.hgw_ip, via_rpi_ip=rpi_ip, serial_number=None, instance_key=instance_key)
+                        self.hgw_repo.upsert(collected.hgw_ip, via_rpi_ip=rpi_ip)
                         seen_hgw_upsert.add(instance_key)
 
             except ConnectionError as e:
