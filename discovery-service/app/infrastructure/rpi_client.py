@@ -12,6 +12,7 @@ from app.parsers.rpi_parser import (
     parse_temperature,
     parse_ip_addr,
     parse_ip_route_dev,
+    parse_ip_neigh_gateway_mac,   # NEW
     parse_ps_scripts,
     parse_docker_ps,
     parse_docker_images,
@@ -37,6 +38,10 @@ class RpiCollectedData:
     lan_ip: Optional[str] = None
     lan_mac: Optional[str] = None
     hgw_ip: Optional[str] = None
+
+    # NEW: MAC de la gateway (vue depuis le RPi)
+    hgw_gateway_mac: Optional[str] = None
+
     all_ips: str = "[]"
 
     # Metrics
@@ -83,24 +88,14 @@ class RpiClient:
         self, ip_mgmt: str
     ) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str], str]:
         """
-        Step 1 : 'ip a'
-            → Parse all interfaces
-            → Select LAN interface (192.168.x.x, not 127.x / 172.x)
-
-        Step 2 : 'ip r s dev <lan_iface>'
-            → Extract default gateway (HGW)
-            → HGW = IP after "default via"
+        Step 1 : 'ip a' → select LAN interface (not 127/172/169.254, ignore virtual)
+        Step 2 : 'ip r s dev <lan_iface>' → Extract gateway IP (HGW)
 
         Returns:
             (lan_iface, lan_ip, lan_mac, hgw_ip, raw_ip_addr)
-
-        Example:
-            ("eth0", "192.168.1.62", "C4:41:1E:FE:8A:53", "192.168.1.1", "...")
         """
 
-        # ── STEP 1 : ip a ─────────────────────────────────────────
         ok_ipa, ipa_raw = self.session.execute("ip a", timeout=10)
-
         if not ok_ipa:
             logger.warning("[RPI] %s: 'ip a' command failed", ip_mgmt)
             return None, None, None, None, ""
@@ -109,8 +104,7 @@ class RpiClient:
 
         if not lan_iface:
             logger.warning(
-                "[RPI] %s: No LAN interface found in 'ip a' output "
-                "(all IPs excluded or only virtual interfaces present)",
+                "[RPI] %s: No LAN interface found in 'ip a' output",
                 ip_mgmt,
             )
             return None, None, None, None, ipa_raw
@@ -120,10 +114,8 @@ class RpiClient:
             ip_mgmt, lan_iface, lan_ip, lan_mac,
         )
 
-        # ── STEP 2 : ip r s dev <iface> ───────────────────────────
         cmd = f"ip r s dev {lan_iface}"
         ok_route, route_raw = self.session.execute(cmd, timeout=10)
-
         if not ok_route:
             logger.warning(
                 "[RPI] %s: '%s' command failed → hgw_ip will be None",
@@ -135,76 +127,92 @@ class RpiClient:
 
         if hgw_ip is None:
             logger.warning(
-                "[RPI] %s: No 'default via' found in '%s' output → hgw_ip=None",
+                "[RPI] %s: No gateway found in '%s' output → hgw_ip=None",
                 ip_mgmt, cmd,
             )
         else:
-            logger.info(
-                "[RPI] %s: HGW (default gateway) = %s",
-                ip_mgmt, hgw_ip,
-            )
+            logger.info("[RPI] %s: HGW (gateway) = %s", ip_mgmt, hgw_ip)
 
         return lan_iface, lan_ip, lan_mac, hgw_ip, ipa_raw
+
+    def _get_gateway_mac(
+        self, ip_mgmt: str, lan_iface: Optional[str], hgw_ip: Optional[str]
+    ) -> Optional[str]:
+        """
+        Get MAC of gateway (hgw_ip) from neighbor table on RPi.
+        Uses:
+            ip neigh show <hgw_ip> dev <lan_iface>
+        If not present, ping once then retry.
+        """
+        if not lan_iface or not hgw_ip:
+            return None
+
+        cmd = f"ip neigh show {hgw_ip} dev {lan_iface}"
+        ok1, neigh_raw1 = self.session.execute(cmd, timeout=5)
+        mac = parse_ip_neigh_gateway_mac(neigh_raw1) if ok1 else None
+        if mac:
+            logger.info("[RPI] %s: gateway MAC = %s (from neigh)", ip_mgmt, mac)
+            return mac
+
+        # Neighbor entry may not exist yet → ping then retry
+        self.session.execute(f"ping -c 1 -W 1 {hgw_ip} >/dev/null 2>&1 || true", timeout=5)
+        ok2, neigh_raw2 = self.session.execute(cmd, timeout=5)
+        mac = parse_ip_neigh_gateway_mac(neigh_raw2) if ok2 else None
+        if mac:
+            logger.info("[RPI] %s: gateway MAC = %s (after ping)", ip_mgmt, mac)
+        else:
+            logger.debug("[RPI] %s: cannot resolve gateway MAC for %s", ip_mgmt, hgw_ip)
+        return mac
 
     # ──────────────────────────────────────────────────────────────
     # PUBLIC : Main collection
     # ──────────────────────────────────────────────────────────────
 
     def collect_all(self, ip_mgmt: str) -> RpiCollectedData:
-        """Collect all metrics from a RPi."""
         logger.info("[RPI] Starting collection for %s", ip_mgmt)
 
-        # ── 1. Hostname ───────────────────────────────────────────
         ok_h, hostname_raw = self.session.execute("hostname", timeout=10)
         hostname = clean(hostname_raw).split("\n")[0].strip() if ok_h else ""
 
-        # ── 2. OS Release ─────────────────────────────────────────
         ok_os, os_raw = self.session.execute(
             "cat /etc/os-release 2>/dev/null", timeout=10
         )
         os_info = parse_os_release(os_raw) if ok_os else {}
 
-        # ── 3. Model ──────────────────────────────────────────────
         ok_model, model_raw = self.session.execute(
             "cat /proc/device-tree/model 2>/dev/null | tr -d '\\0'",
             timeout=10,
         )
         model = clean(model_raw).strip() if ok_model else ""
 
-        # ── 4. Kernel ─────────────────────────────────────────────
         ok_uname, uname_raw = self.session.execute("uname -a", timeout=10)
         kernel = clean(uname_raw).strip() if ok_uname else ""
 
-        # ── 5. Network : LAN iface + HGW ──────────────────────────
-        lan_iface, lan_ip, lan_mac, hgw_ip, raw_ip_addr = self._get_lan_and_hgw(
-            ip_mgmt
-        )
+        # Network
+        lan_iface, lan_ip, lan_mac, hgw_ip, raw_ip_addr = self._get_lan_and_hgw(ip_mgmt)
 
-        # ── 5b. Build all_ips ─────────────────────────────────────
+        # NEW: gateway mac
+        hgw_gateway_mac = self._get_gateway_mac(ip_mgmt, lan_iface, hgw_ip)
+
         all_ips = self._build_all_ips(raw_ip_addr)
 
-        # ── 6. Temperature ────────────────────────────────────────
         ok_temp, temp_raw = self.session.execute(
             "vcgencmd measure_temp 2>/dev/null || echo ''", timeout=10
         )
         temp = parse_temperature(temp_raw) if ok_temp else None
 
-        # ── 7. Memory ─────────────────────────────────────────────
         ok_mem, mem_raw = self.session.execute("free -m", timeout=10)
         mem = parse_free_output(mem_raw) if ok_mem else {}
 
-        # ── 8. Disk ───────────────────────────────────────────────
         ok_df, df_raw = self.session.execute("df -h", timeout=10)
         disk = parse_df_output(df_raw) if ok_df else {}
 
-        # ── 9. Running processes ───────────────────────────────────
         ok_ps, ps_raw = self.session.execute("ps aux 2>/dev/null", timeout=15)
         scripts, python_procs = parse_ps_scripts(ps_raw) if ok_ps else ([], [])
 
-        # ── 10. Docker ────────────────────────────────────────────
         docker_avail = False
-        containers   = []
-        images       = []
+        containers = []
+        images = []
 
         ok_docker_test, docker_test_raw = self.session.execute(
             "docker --version 2>/dev/null || echo 'not found'", timeout=5
@@ -229,19 +237,15 @@ class RpiClient:
                 "[RPI] %s: Docker → %d containers, %d images",
                 ip_mgmt, len(containers), len(images),
             )
-        else:
-            logger.debug("[RPI] %s: Docker not available", ip_mgmt)
 
-        # ── 11. USB ───────────────────────────────────────────────
         ok_usb, usb_raw = self.session.execute(
             "lsusb 2>/dev/null || echo ''", timeout=10
         )
         usb_devices = parse_lsusb(usb_raw) if ok_usb else []
 
-        # ── Summary log ───────────────────────────────────────────
         logger.info(
-            "[RPI] Collected %s → hostname=%s | iface=%s | lan=%s | hgw=%s | temp=%s°C",
-            ip_mgmt, hostname, lan_iface, lan_ip, hgw_ip, temp,
+            "[RPI] Collected %s → hostname=%s | iface=%s | lan=%s | hgw=%s | gw_mac=%s | temp=%s°C",
+            ip_mgmt, hostname, lan_iface, lan_ip, hgw_ip, hgw_gateway_mac, temp,
         )
 
         return RpiCollectedData(
@@ -256,6 +260,7 @@ class RpiClient:
             lan_ip=lan_ip,
             lan_mac=lan_mac,
             hgw_ip=hgw_ip,
+            hgw_gateway_mac=hgw_gateway_mac,   # NEW
             all_ips=json.dumps(all_ips),
             temp_celsius=temp,
             mem_total_mb=mem.get("total_mb"),
@@ -276,55 +281,32 @@ class RpiClient:
         )
 
     def _build_all_ips(self, ipa_raw: str) -> list[dict]:
-        """
-        Build a list of all IPs from 'ip a' output.
-
-        Handles interface names like:
-            - eth0, eth1, wlan0     (standard)
-            - LAN, WAN              (custom names)
-            - LAN@eth0              (aliased interfaces)
-
-        Returns:
-            [
-                {"iface": "eth0",  "ip": "192.168.1.62",  "mac": "C4:41:1E:FE:8A:53"},
-                {"iface": "eth1",  "ip": "172.16.55.210", "mac": "B8:27:EB:9B:EE:EE"},
-                {"iface": "LAN",   "ip": "192.168.2.100", "mac": "3C:18:A0:22:6C:9D"},
-            ]
-        """
         if not ipa_raw:
             return []
 
-        text          = clean(ipa_raw)
+        text = clean(ipa_raw)
         current_iface = None
-        current_mac   = None
-        result        = []
+        current_mac = None
+        result = []
 
         for line in text.splitlines():
             line = line.strip()
 
-            # ── Nouvelle interface ─────────────────────────────────
-            # Gère tous les formats :
-            #   "2: eth0: <..."
-            #   "2: LAN: <..."
-            #   "2: LAN@eth0: <..."
             iface_match = re.match(
-                r"^\d+:\s+"           # "2: "
-                r"([^:@\s]+)"         # nom interface (sans @, :, espace)
-                r"(?:@[^\s:]+)?"      # optionnel: "@eth0"
-                r":\s+<",             # ": <"
+                r"^\d+:\s+"
+                r"([^:@\s]+)"
+                r"(?:@[^\s:]+)?"
+                r":\s+<",
                 line
             )
             if iface_match:
                 current_iface = iface_match.group(1)
-                current_mac   = None
+                current_mac = None
                 continue
 
-            # Ignorer loopback
             if current_iface is None or current_iface == "lo":
                 continue
 
-            # ── MAC ───────────────────────────────────────────────
-            # "link/ether c4:41:1e:fe:8a:53 brd ff:ff:ff:ff:ff:ff"
             mac_match = re.match(
                 r"link/ether\s+([0-9a-f:]{17})",
                 line,
@@ -334,20 +316,17 @@ class RpiClient:
                 current_mac = mac_match.group(1).upper()
                 continue
 
-            # ── IPv4 ──────────────────────────────────────────────
-            # "inet 192.168.1.62/24 brd ..."
             inet_match = re.match(
                 r"inet\s+(\d+\.\d+\.\d+\.\d+)/\d+",
                 line,
             )
             if inet_match:
                 ip = inet_match.group(1)
-                # Exclure loopback uniquement
                 if not ip.startswith("127."):
                     result.append({
                         "iface": current_iface,
-                        "ip":    ip,
-                        "mac":   current_mac,
+                        "ip": ip,
+                        "mac": current_mac,
                     })
 
         return result

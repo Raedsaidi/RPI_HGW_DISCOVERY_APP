@@ -48,8 +48,12 @@ class RpiFact(Base):
     # Network
     lan_iface = Column(String(32), nullable=True)
     lan_ip = Column(String(64), nullable=True)
-    lan_mac = Column(String(32), nullable=True)       # ← NOUVEAU
+    lan_mac = Column(String(32), nullable=True)
     hgw_ip = Column(String(64), nullable=True)
+
+    # NEW: MAC de la gateway (ip neigh show <hgw_ip>)
+    hgw_gateway_mac = Column(String(32), nullable=True)
+
     all_ips = Column(MEDIUMTEXT, nullable=True)
 
     # Metrics
@@ -72,7 +76,7 @@ class RpiFact(Base):
     usb_devices = Column(MEDIUMTEXT, nullable=True)
 
     # Raw
-    raw_ip_addr = Column(MEDIUMTEXT, nullable=True)   # ← REMPLACE raw_ifconfig
+    raw_ip_addr = Column(MEDIUMTEXT, nullable=True)
     raw_ps = Column(MEDIUMTEXT, nullable=True)
 
 

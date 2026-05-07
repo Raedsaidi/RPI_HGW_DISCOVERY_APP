@@ -35,6 +35,7 @@ class HgwRepository:
         ip: str,
         via_rpi_ip: Optional[str] = None,
         serial_number: Optional[str] = None,
+        instance_key: Optional[str] = None,
     ) -> Hgw:
         """
         Crée ou met à jour une HGW.
@@ -47,6 +48,7 @@ class HgwRepository:
             hgw = Hgw(
                 ip=ip,
                 via_rpi_ip=via_rpi_ip,
+                instance_key=instance_key,
                 serial_number=serial_number,
                 created_at=datetime.utcnow(),
             )
@@ -58,6 +60,8 @@ class HgwRepository:
                 hgw.via_rpi_ip = via_rpi_ip
             if serial_number:
                 hgw.serial_number = serial_number
+            if instance_key:
+                hgw.instance_key = instance_key
 
         self.db.commit()
         self.db.refresh(hgw)
@@ -124,6 +128,7 @@ class HgwRepository:
             run_id=run_id,
             hgw_ip=data.hgw_ip,
             via_rpi_ip=data.via_rpi_ip,
+            instance_key=data.instance_key,   # NEW
             collected_at=datetime.utcnow(),
             manufacturer=data.manufacturer,
             model_name=data.model_name,
@@ -143,7 +148,7 @@ class HgwRepository:
         self.db.add(fact)
         self.db.commit()
         return fact
-
+    
     def list_all(self) -> list[Hgw]:
         return self.db.query(Hgw).order_by(Hgw.ip).all()
 

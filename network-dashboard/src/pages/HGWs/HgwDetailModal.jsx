@@ -1,5 +1,5 @@
 import React from 'react'
-import { Wifi, Globe, Cpu, Clock, Network } from 'lucide-react'
+import { Wifi, Globe, Cpu, Clock } from 'lucide-react'
 import Modal from '@/components/common/Modal'
 import dayjs from 'dayjs'
 import './HgwDetailModal.css'
@@ -29,7 +29,6 @@ const formatMem = (kb) => {
 /**
  * Extraire le préfixe réseau depuis l'IP de la gateway.
  * Ex: "192.168.1.1" → "192.168.1.x"
- * Remplace l'ancien champ hgw_type hardcodé.
  */
 const getNetworkPrefix = (ip) => {
   if (!ip) return null
@@ -50,7 +49,6 @@ const HgwDetailModal = ({ open, onClose, hgwData }) => {
         )
       : null
 
-  // Préfixe réseau calculé dynamiquement à partir de l'IP réelle
   const networkPrefix = hgwData.network || getNetworkPrefix(hgwData.ip)
 
   return (
@@ -67,12 +65,9 @@ const HgwDetailModal = ({ open, onClose, hgwData }) => {
           <div className="hgw-detail__section-title">
             <Wifi size={14} /> Device Identity
           </div>
-          <Row label="IP Address"    value={hgwData.ip}           mono />
-          {/*
-            MODIFICATION : "HGW Type" supprimé (était hgw_type hardcodé).
-            Remplacé par "Network" calculé dynamiquement depuis l'IP réelle
-            fournie par 'ip r s'.
-          */}
+
+          <Row label="IP Address" value={hgwData.ip} mono />
+
           <Row
             label="Network"
             value={
@@ -81,12 +76,17 @@ const HgwDetailModal = ({ open, onClose, hgwData }) => {
                 : null
             }
           />
-          <Row label="Manufacturer"  value={hgwData.manufacturer}    />
-          <Row label="Model"         value={hgwData.model_name}      />
-          <Row label="Serial Number" value={hgwData.serial_number}   mono />
-          <Row label="SW Version"    value={hgwData.software_version}/>
-          <Row label="HW Version"    value={hgwData.hardware_version}/>
-          <Row label="Via RPi"       value={hgwData.via_rpi_ip}      mono />
+
+          <Row label="Manufacturer" value={hgwData.manufacturer} />
+          <Row label="Model" value={hgwData.model_name} />
+          <Row label="Serial Number" value={hgwData.serial_number} mono />
+
+          {/* NEW: instance_key (important when multiple HGWs share same IP) */}
+          <Row label="Instance Key" value={hgwData.instance_key} mono />
+
+          <Row label="SW Version" value={hgwData.software_version} />
+          <Row label="HW Version" value={hgwData.hardware_version} />
+          <Row label="Via RPi" value={hgwData.via_rpi_ip} mono />
         </div>
 
         {/* ── Network ── */}
@@ -95,7 +95,6 @@ const HgwDetailModal = ({ open, onClose, hgwData }) => {
             <Globe size={14} /> Network
           </div>
           <Row label="External IP" value={hgwData.external_ip} mono />
-          {/*<Row label="Default Gateway" value={hgwData.ip} mono />*/}
         </div>
 
         {/* ── Hardware ── */}
@@ -103,18 +102,9 @@ const HgwDetailModal = ({ open, onClose, hgwData }) => {
           <div className="hgw-detail__section-title">
             <Cpu size={14} /> Hardware
           </div>
-          <Row
-            label="Uptime"
-            value={formatUptime(hgwData.uptime_seconds)}
-          />
-          <Row
-            label="Memory Free"
-            value={formatMem(hgwData.mem_free_kb)}
-          />
-          <Row
-            label="Memory Total"
-            value={formatMem(hgwData.mem_total_kb)}
-          />
+          <Row label="Uptime" value={formatUptime(hgwData.uptime_seconds)} />
+          <Row label="Memory Free" value={formatMem(hgwData.mem_free_kb)} />
+          <Row label="Memory Total" value={formatMem(hgwData.mem_total_kb)} />
 
           {memPct !== null && (
             <div className="hgw-detail__row">

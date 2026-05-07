@@ -29,6 +29,7 @@ class Settings(BaseModel):
     INITIAL_SUPERADMIN_PASSWORD: str = Field(default="SuperAdmin123!")
     INITIAL_SUPERADMIN_EMAIL: str = Field(default="superadmin@example.com")
     INITIAL_SUPERADMIN_FULL_NAME: str = Field(default="Super Admin")
+    DISCOVERY_SERVICE_URL: str = Field(default="http://discovery_service:8001")
 
     @property
     def DATABASE_URL(self) -> str:
@@ -70,6 +71,9 @@ def get_settings() -> Settings:
         ),
         INITIAL_SUPERADMIN_FULL_NAME=os.getenv(
             "INITIAL_SUPERADMIN_FULL_NAME", "Super Admin"
+        ),
+        DISCOVERY_SERVICE_URL=os.getenv(
+            "DISCOVERY_SERVICE_URL", "http://discovery_service:8001"
         ),
     )
 

@@ -1,5 +1,4 @@
 from datetime import datetime
-import re
 from typing import Annotated, Optional
 
 from pydantic import (
@@ -38,6 +37,11 @@ RefreshTokenStr = Annotated[
     StringConstraints(strip_whitespace=True, min_length=20, max_length=2000),
 ]
 
+HgwIdentifierStr = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
+]
+
 
 # =========================================================
 # Helpers
@@ -48,39 +52,25 @@ def contains_letter(value: str) -> bool:
 
 
 def is_only_digits_ignoring_spaces(value: str) -> bool:
-    """
-    True si (en ignorant les espaces) la chaîne est uniquement des chiffres.
-    Ex: "123" -> True, "12 3" -> True, "123_" -> False, "raed33" -> False
-    """
     compact = value.replace(" ", "")
     return bool(compact) and compact.isdigit()
 
 
 def is_valid_full_name(value: str) -> bool:
-    """
-    Autorise uniquement:
-    - lettres
-    - espaces
-    """
     return all(ch.isalpha() or ch == " " for ch in value)
 
 
 def validate_password_rules(v: str) -> str:
     if any(ch.isspace() for ch in v):
         raise ValueError("Password cannot contain spaces.")
-
     if not any(ch.islower() for ch in v):
         raise ValueError("Password must contain at least one lowercase letter.")
-
     if not any(ch.isupper() for ch in v):
         raise ValueError("Password must contain at least one uppercase letter.")
-
     if not any(ch.isdigit() for ch in v):
         raise ValueError("Password must contain at least one digit.")
-
     if not any(not ch.isalnum() for ch in v):
         raise ValueError("Password must contain at least one special character.")
-
     return v
 
 
@@ -117,9 +107,6 @@ class RefreshTokenRequest(StrictInputModel):
 
 
 class TokenData(BaseModel):
-    """
-    Utilisé par app.core.security pour représenter les infos extraites du JWT.
-    """
     username: Optional[str] = None
     role: Optional[UserRole] = None
 
@@ -139,10 +126,8 @@ class UserInputBase(StrictInputModel):
     def validate_username(cls, v: str) -> str:
         if is_only_digits_ignoring_spaces(v):
             raise ValueError("The username cannot be composed only of digits.")
-
         if any(ch in v for ch in ("\n", "\r", "\t")):
             raise ValueError("The username cannot contain newline or tab characters.")
-
         return v
 
     @field_validator("email", mode="before")
@@ -164,13 +149,10 @@ class UserInputBase(StrictInputModel):
     def validate_full_name(cls, v: str) -> str:
         if not contains_letter(v):
             raise ValueError("The full name must contain at least one letter and cannot be numeric.")
-
         if not is_valid_full_name(v):
             raise ValueError("The full name can only contain letters and spaces.")
-
         if "  " in v:
             raise ValueError("The full name cannot contain double spaces.")
-
         return v
 
     @field_validator("password")
@@ -186,22 +168,29 @@ class UserInputBase(StrictInputModel):
 class AdminUserCreate(UserInputBase):
     role: UserRole
 
+    # ✅ NEW: 0..n HGWs
+    project_hgws: list[HgwIdentifierStr] = Field(default_factory=list)
+
+    # legacy (optional) : ancien champ 1 seule valeur
+    project_hgw_ip: Optional[HgwIdentifierStr] = None
+
 
 # =========================================================
 # UPDATE user via ADMIN / SUPER_ADMIN (sans username)
 # =========================================================
 
 class AdminUserUpdate(StrictInputModel):
-    """
-    Permet de modifier un user (tout sauf username).
-    - role: seulement SUPER_ADMIN (enforced côté endpoint)
-    - password optionnel: si fourni => mêmes règles strictes
-    """
     email: Optional[EmailStr] = None
     full_name: Optional[FullNameStr] = None
     password: Optional[PasswordStr] = None
     is_active: Optional[bool] = None
     role: Optional[UserRole] = None
+
+    # ✅ NEW: si fourni => remplace la liste complète, [] => clear
+    project_hgws: Optional[list[HgwIdentifierStr]] = None
+
+    # legacy
+    project_hgw_ip: Optional[HgwIdentifierStr] = None
 
     @field_validator("email", mode="before")
     @classmethod
@@ -226,16 +215,12 @@ class AdminUserUpdate(StrictInputModel):
     def validate_full_name(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return None
-
         if not contains_letter(v):
             raise ValueError("The full name must contain at least one letter and cannot be numeric.")
-
         if not is_valid_full_name(v):
             raise ValueError("The full name can only contain letters and spaces.")
-
         if "  " in v:
             raise ValueError("The full name cannot contain double spaces.")
-
         return v
 
     @field_validator("password")
@@ -258,6 +243,12 @@ class UserRead(ORMReadModel):
     role: UserRole
     is_active: bool
 
+    # ✅ NEW
+    project_hgws: list[str] = Field(default_factory=list)
+
+    # legacy (optional read)
+    project_hgw_ip: Optional[str] = None
+
     created_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
 
@@ -274,6 +265,13 @@ class UserAdminRead(ORMReadModel):
     role: UserRole
     is_active: bool
     password_hash: str
+
+    # ✅ NEW
+    project_hgws: list[str] = Field(default_factory=list)
+
+    # legacy (optional read)
+    project_hgw_ip: Optional[str] = None
+
     created_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
 

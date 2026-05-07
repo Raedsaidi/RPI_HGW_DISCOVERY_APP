@@ -97,3 +97,6 @@
   white-space: nowrap;
   letter-spacing: 0.02em;
 }
+.hgw-detail__value {
+  word-break: break-all;
+}

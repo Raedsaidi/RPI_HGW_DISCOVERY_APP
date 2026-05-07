@@ -9,10 +9,22 @@ from app.infrastructure.ssh_manager import SSHSession
 logger = logging.getLogger(__name__)
 
 
+def _norm_mac(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    v = value.strip().replace("-", ":").upper()
+    if re.fullmatch(r"[0-9A-F]{2}(:[0-9A-F]{2}){5}", v):
+        return v
+    return value.strip().upper()
+
+
 @dataclass
 class HgwCollectedData:
     hgw_ip: str
     via_rpi_ip: str
+
+    # NEW: clé d’instance (set par DiscoveryService)
+    instance_key: Optional[str] = None
 
     manufacturer: Optional[str] = None
     model_name: Optional[str] = None
@@ -33,16 +45,12 @@ class HgwCollectedData:
 
 
 class HgwClient:
-    """
-    """
-
     def __init__(self, session: SSHSession):
         self.session = session
 
     def collect_deviceinfo(self, hgw_ip: str, via_rpi_ip: str) -> HgwCollectedData:
         logger.info("[HGW] Collecting DeviceInfo from %s (via RPi %s)", hgw_ip, via_rpi_ip)
 
-        # Send ba-cli command and get JSON output
         ok, raw = self.session.execute(
             'ba-cli -a -j -- "DeviceInfo.?"',
             timeout=40,
@@ -50,7 +58,6 @@ class HgwClient:
         )
 
         if not ok:
-            # Try alternative command format
             ok, raw = self.session.execute(
                 'echo "DeviceInfo.?" | ba-cli -a -j',
                 timeout=40,
@@ -74,30 +81,46 @@ class HgwClient:
         parsed.success = True
 
         logger.info(
-            "[HGW] Collected %s: model=%s, fw=%s, uptime=%s",
+            "[HGW] Collected %s: model=%s, fw=%s, uptime=%s, serial=%s",
             hgw_ip,
             parsed.model_name,
             parsed.software_version,
             parsed.uptime_seconds,
+            parsed.serial_number,
         )
 
         return parsed
 
+    def _extract_json_array(self, text: str) -> Optional[str]:
+        if not text:
+            return None
+        start = text.find("[")
+        end = text.rfind("]")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        return text[start:end + 1]
+
     def _parse_deviceinfo(self, text: str) -> HgwCollectedData:
-        """
-        Parse ba-cli output. Can be JSON or key=value format.
-        """
         data = HgwCollectedData(hgw_ip="", via_rpi_ip="")
 
-        # Try JSON parsing first
-        json_match = re.search(r"\[.*\]", text, re.DOTALL)
-        if json_match:
+        json_str = self._extract_json_array(text)
+        if json_str:
             try:
-                json_data = json.loads(json_match.group(0))
+                json_data = json.loads(json_str)
                 if isinstance(json_data, list) and json_data:
                     obj = json_data[0]
-                    di = obj.get("DeviceInfo.", {})
-                    ms = obj.get("DeviceInfo.MemoryStatus.", {})
+
+                    di = obj.get("DeviceInfo.")
+                    if not isinstance(di, dict):
+                        di = obj.get("DeviceInfo", {})
+                    if not isinstance(di, dict):
+                        di = {}
+
+                    ms = obj.get("DeviceInfo.MemoryStatus.")
+                    if not isinstance(ms, dict):
+                        ms = obj.get("DeviceInfo.MemoryStatus", {})
+                    if not isinstance(ms, dict):
+                        ms = {}
 
                     data.manufacturer = di.get("Manufacturer")
                     data.model_name = di.get("ModelName")
@@ -105,37 +128,40 @@ class HgwClient:
                     data.software_version = di.get("SoftwareVersion")
                     data.hardware_version = di.get("HardwareVersion")
                     data.external_ip = di.get("ExternalIPAddress")
-                    data.base_mac = di.get("BaseMAC")
+
+                    base_mac = di.get("BaseMAC") or di.get("BaseMACAddress")
+                    data.base_mac = _norm_mac(base_mac)
+
                     data.country = di.get("Country")
                     data.device_status = di.get("DeviceStatus")
 
                     uptime = di.get("UpTime")
-                    if uptime:
+                    if uptime is not None:
                         try:
                             data.uptime_seconds = int(uptime)
-                        except ValueError:
+                        except Exception:
                             pass
 
                     free = ms.get("Free")
-                    if free:
+                    if free is not None:
                         try:
                             data.mem_free_kb = int(free)
-                        except ValueError:
+                        except Exception:
                             pass
 
                     total = ms.get("Total")
-                    if total:
+                    if total is not None:
                         try:
                             data.mem_total_kb = int(total)
-                        except ValueError:
+                        except Exception:
                             pass
 
                     return data
             except json.JSONDecodeError:
                 pass
 
-        # Fallback: key=value line parsing
-        for line in text.splitlines():
+        # Fallback key=value
+        for line in (text or "").splitlines():
             line = line.strip()
             if "=" not in line:
                 continue
@@ -158,10 +184,10 @@ class HgwClient:
             elif key == "DeviceInfo.UpTime":
                 try:
                     data.uptime_seconds = int(val)
-                except ValueError:
+                except Exception:
                     pass
-            elif key == "DeviceInfo.BaseMAC":
-                data.base_mac = val
+            elif key in ("DeviceInfo.BaseMAC", "DeviceInfo.BaseMACAddress"):
+                data.base_mac = _norm_mac(val)
             elif key == "DeviceInfo.Country":
                 data.country = val
             elif key == "DeviceInfo.DeviceStatus":
@@ -169,12 +195,12 @@ class HgwClient:
             elif key == "DeviceInfo.MemoryStatus.Free":
                 try:
                     data.mem_free_kb = int(val)
-                except ValueError:
+                except Exception:
                     pass
             elif key == "DeviceInfo.MemoryStatus.Total":
                 try:
                     data.mem_total_kb = int(val)
-                except ValueError:
+                except Exception:
                     pass
 
         return data

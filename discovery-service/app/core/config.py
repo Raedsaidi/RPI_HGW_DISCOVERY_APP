@@ -1,5 +1,5 @@
+# app/core/config.py
 from pydantic_settings import BaseSettings
-from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -30,14 +30,11 @@ class Settings(BaseSettings):
     SWITCH_TELNET_USER: str = "admin"
     SWITCH_TELNET_PASS: str = "password"
 
-    # RPi defaults — credential primaire
+    # RPi defaults
     RPI_SSH_USER: str = "pi"
     RPI_SSH_PASS: str = "raspberry"
-
-    # ── NOUVEAU : RPi fallback credentials ───────────────────
     RPI_SSH_FALLBACK_USER: str = "root"
     RPI_SSH_FALLBACK_PASS: str = "sah"
-    # ─────────────────────────────────────────────────────────
 
     # HGW defaults
     HGW_SSH_USER: str = "root"
@@ -49,6 +46,12 @@ class Settings(BaseSettings):
     SYNC_MINUTE: int = 0
     SYNC_ENABLED: bool = True
     SYNC_TIMEZONE: str = "UTC"
+
+    # ── AUTH SERVICE ─────────────────────────────────────────
+    # URL du service d'authentification (ex: auth-service en docker)
+    AUTH_SERVICE_URL: str = "http://auth-service:8000"
+    AUTH_SERVICE_TIMEOUT: float = 5.0
+    # ─────────────────────────────────────────────────────────
 
     @property
     def DATABASE_URL(self) -> str:

@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  Users,
   Plus,
   RefreshCw,
   Pencil,
@@ -19,10 +18,9 @@ import { StatusBadge } from '@/components/common/Badge'
 import Spinner from '@/components/common/Spinner'
 import UserModal from './UserModal'
 import DeleteUserModal from './DeleteUserModal'
-import { usersApi } from '@/api/endpoints'
+import { usersApi, hgwsApi } from '@/api/endpoints'
 import { useAuth } from '@/context/AuthContext'
-import { useNotification, NOTIFICATION_MESSAGES } from '@/context/NotificationContext'
-import { getFriendlyMessage } from '@/utils/messageHelper'
+import { useNotification } from '@/context/NotificationContext'
 import dayjs from 'dayjs'
 import './UsersPage.css'
 
@@ -76,6 +74,53 @@ const RoleBadge = ({ role }) => {
   )
 }
 
+/**
+ * Charge toutes les pages HGWs et construit:
+ * - options: pour la sélection
+ * - index: identifier -> hgw (identifier = serial_number sinon ip)
+ */
+async function fetchAllHgws() {
+  const PAGE_SIZE = 100
+  let page = 1
+  let totalPages = 1
+  const all = []
+
+  while (page <= totalPages) {
+    const res = await hgwsApi.list({ page, page_size: PAGE_SIZE })
+    const chunk = res?.data?.data || []
+    all.push(...chunk)
+    totalPages = res?.data?.total_pages || 1
+    page += 1
+  }
+
+  // Construire options + index
+  const index = {}
+  const options = []
+
+  for (const h of all) {
+    const identifier = h?.serial_number || h?.ip
+    if (!identifier) continue
+
+    // index par identifiant unique (serial)
+    if (h?.serial_number) index[h.serial_number] = h
+    // fallback index par ip (compat / anciens)
+    if (h?.ip) index[h.ip] = h
+
+    options.push({
+      value: identifier,
+      label: `${h.model_name || h.manufacturer || 'HGW'} — ${h.ip}${h.serial_number ? ` (${h.serial_number})` : ''}`,
+      ip: h.ip,
+      model_name: h.model_name,
+      serial_number: h.serial_number,
+    })
+  }
+
+  // tri stable
+  options.sort((a, b) => a.label.localeCompare(b.label))
+
+  return { options, index }
+}
+
 const UsersPage = () => {
   const { user: currentUser } = useAuth()
   const { notify } = useNotification()
@@ -84,6 +129,11 @@ const UsersPage = () => {
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
+
+  /* HGWs data (loaded once here, shared with modals + table render) */
+  const [hgwOptions, setHgwOptions] = useState([])
+  const [hgwIndex, setHgwIndex] = useState({})
+  const [hgwsLoading, setHgwsLoading] = useState(false)
 
   /* filters */
   const [search, setSearch] = useState('')
@@ -96,7 +146,6 @@ const UsersPage = () => {
   const [editTarget, setEditTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
 
-  /* ── fetch ── */
   const fetchUsers = useCallback(async () => {
     setLoading(true)
     try {
@@ -110,19 +159,45 @@ const UsersPage = () => {
       setTotalPages(res.data.total_pages || 1)
     } catch (e) {
       console.error(e)
+      notify?.('error', 'Failed to load users')
     } finally {
       setLoading(false)
     }
-  }, [page, search, filterRole])
+  }, [page, search, filterRole, notify])
+
+  const loadHgws = useCallback(async () => {
+    setHgwsLoading(true)
+    try {
+      const { options, index } = await fetchAllHgws()
+      setHgwOptions(options)
+      setHgwIndex(index)
+    } catch (e) {
+      console.error(e)
+      setHgwOptions([])
+      setHgwIndex({})
+      // pas bloquant
+    } finally {
+      setHgwsLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     fetchUsers()
   }, [fetchUsers])
 
-  const handleSearch = (val) => { setSearch(val); setPage(1) }
-  const handleRoleFilter = (val) => { setFilterRole(val); setPage(1) }
+  useEffect(() => {
+    loadHgws()
+  }, [loadHgws])
 
-  /* ── can edit/delete ── */
+  const handleSearch = (val) => {
+    setSearch(val)
+    setPage(1)
+  }
+  const handleRoleFilter = (val) => {
+    setFilterRole(val)
+    setPage(1)
+  }
+
   const canEdit = (row) => {
     if (currentUser?.role === 'SUPER_ADMIN') return row.role !== 'SUPER_ADMIN' || row.id === currentUser.id
     if (currentUser?.role === 'ADMIN') return row.role === 'USER'
@@ -137,15 +212,12 @@ const UsersPage = () => {
     return false
   }
 
-  /* ── columns ── */
-  const columns = [
+  const columns = useMemo(() => ([
     {
       key: 'id',
       title: '#',
       width: 60,
-      render: (val) => (
-        <span className="users-table__id">#{val}</span>
-      ),
+      render: (val) => <span className="users-table__id">#{val}</span>,
     },
     {
       key: 'full_name',
@@ -167,9 +239,7 @@ const UsersPage = () => {
     {
       key: 'email',
       title: 'Email',
-      render: (val) => (
-        <span className="users-table__email">{val}</span>
-      ),
+      render: (val) => <span className="users-table__email">{val}</span>,
     },
     {
       key: 'role',
@@ -177,23 +247,55 @@ const UsersPage = () => {
       width: 160,
       render: (val) => <RoleBadge role={val} />,
     },
+
+    // ✅ 0..n HGWs
+    {
+      key: 'project_hgws',
+      title: 'Projects (HGW)',
+      width: 340,
+      render: (val, row) => {
+        const list = Array.isArray(row.project_hgws) ? row.project_hgws : []
+        if (list.length === 0) return <span className="users-table__null">—</span>
+
+        const max = 2
+        const shown = list.slice(0, max)
+        const rest = list.length - shown.length
+
+        return (
+          <div className="users-table__project-list">
+            {shown.map((identifier, idx) => {
+              const h = hgwIndex[identifier]
+              const name = h?.model_name || h?.manufacturer || h?.serial_number || 'HGW'
+              const ip = h?.ip || identifier
+
+              return (
+                <div key={`${identifier}-${idx}`} className="users-table__project-item">
+                  <div className="users-table__project-name">{name}</div>
+                  <div className="users-table__project-ip">{ip}</div>
+                </div>
+              )
+            })}
+
+            {rest > 0 && <div className="users-table__project-more">+{rest} more</div>}
+            {hgwsLoading && <div className="users-table__project-loading">(loading HGWs...)</div>}
+          </div>
+        )
+      },
+    },
+
     {
       key: 'is_active',
       title: 'Status',
       width: 100,
       align: 'center',
-      render: (val) => (
-        <StatusBadge status={val ? 'active' : 'disabled'} />
-      ),
+      render: (val) => <StatusBadge status={val ? 'active' : 'disabled'} />,
     },
     {
       key: 'created_at',
       title: 'Created',
       render: (val) =>
         val ? (
-          <span className="users-table__date">
-            {dayjs(val).format('MMM D, YYYY')}
-          </span>
+          <span className="users-table__date">{dayjs(val).format('MMM D, YYYY')}</span>
         ) : (
           <span className="users-table__null">—</span>
         ),
@@ -203,9 +305,7 @@ const UsersPage = () => {
       title: 'Last Login',
       render: (val) =>
         val ? (
-          <span className="users-table__date">
-            {dayjs(val).format('MMM D, HH:mm')}
-          </span>
+          <span className="users-table__date">{dayjs(val).format('MMM D, HH:mm')}</span>
         ) : (
           <span className="users-table__null">Never</span>
         ),
@@ -238,9 +338,8 @@ const UsersPage = () => {
         </div>
       ),
     },
-  ]
+  ]), [canDelete, canEdit, hgwIndex, hgwsLoading])
 
-  /* ── role stats ── */
   const roleStats = Object.entries(ROLE_CONFIG).map(([key, cfg]) => ({
     role: key,
     count: data.filter((u) => u.role === key).length,
@@ -249,7 +348,6 @@ const UsersPage = () => {
 
   return (
     <div className="users-page">
-      {/* ── Header ── */}
       <div className="page-header">
         <div>
           <h2 className="page-title">User Management</h2>
@@ -257,30 +355,28 @@ const UsersPage = () => {
             {total} user{total !== 1 ? 's' : ''} registered
           </p>
         </div>
+
         <div className="users-page__header-actions">
           <Button
             variant="secondary"
             icon={RefreshCw}
             size="md"
-            onClick={fetchUsers}
+            onClick={() => {
+              fetchUsers()
+              loadHgws()
+            }}
           >
             Refresh
           </Button>
-          {(currentUser?.role === 'SUPER_ADMIN' ||
-            currentUser?.role === 'ADMIN') && (
-            <Button
-              variant="primary"
-              icon={Plus}
-              size="md"
-              onClick={() => setCreateOpen(true)}
-            >
+
+          {(currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ADMIN') && (
+            <Button variant="primary" icon={Plus} size="md" onClick={() => setCreateOpen(true)}>
               Add User
             </Button>
           )}
         </div>
       </div>
 
-      {/* ── Role summary cards ── */}
       <div className="users-page__role-cards">
         {roleStats.map((rs) => {
           const Icon = rs.icon
@@ -288,9 +384,7 @@ const UsersPage = () => {
             <div
               key={rs.role}
               className="users-page__role-card"
-              style={{
-                borderTop: `3px solid ${rs.color}`,
-              }}
+              style={{ borderTop: `3px solid ${rs.color}` }}
             >
               <div
                 className="users-page__role-card-icon"
@@ -299,21 +393,15 @@ const UsersPage = () => {
                 <Icon size={18} strokeWidth={2} />
               </div>
               <div className="users-page__role-card-content">
-                <span className="users-page__role-card-count">
-                  {rs.count}
-                </span>
-                <span className="users-page__role-card-label">
-                  {rs.label}
-                </span>
+                <span className="users-page__role-card-count">{rs.count}</span>
+                <span className="users-page__role-card-label">{rs.label}</span>
               </div>
             </div>
           )
         })}
       </div>
 
-      {/* ── Table card ── */}
       <Card padding={false}>
-        {/* Filters */}
         <div className="users-page__filters">
           <SearchBar
             value={search}
@@ -333,11 +421,7 @@ const UsersPage = () => {
               ].map((opt) => (
                 <button
                   key={opt.val}
-                  className={`users-page__role-btn ${
-                    filterRole === opt.val
-                      ? 'users-page__role-btn--active'
-                      : ''
-                  }`}
+                  className={`users-page__role-btn ${filterRole === opt.val ? 'users-page__role-btn--active' : ''}`}
                   onClick={() => handleRoleFilter(opt.val)}
                 >
                   {opt.label}
@@ -347,17 +431,11 @@ const UsersPage = () => {
           </div>
         </div>
 
-        {/* Table */}
         {loading ? (
           <Spinner centered text="Loading users..." />
         ) : (
           <>
-            <Table
-              columns={columns}
-              data={data}
-              rowKey="id"
-              emptyText="No users found"
-            />
+            <Table columns={columns} data={data} rowKey="id" emptyText="No users found" />
             {total > 0 && (
               <Pagination
                 page={page}
@@ -371,13 +449,14 @@ const UsersPage = () => {
         )}
       </Card>
 
-      {/* ── Modals ── */}
       <UserModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onSuccess={() => { setCreateOpen(false); fetchUsers() }}
         mode="create"
         currentUserRole={currentUser?.role}
+        hgwOptions={hgwOptions}
+        hgwsLoading={hgwsLoading}
       />
 
       <UserModal
@@ -387,6 +466,8 @@ const UsersPage = () => {
         mode="edit"
         initial={editTarget}
         currentUserRole={currentUser?.role}
+        hgwOptions={hgwOptions}
+        hgwsLoading={hgwsLoading}
       />
 
       <DeleteUserModal

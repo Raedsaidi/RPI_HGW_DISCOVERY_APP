@@ -39,8 +39,19 @@ const HGWsPage = () => {
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 25
 
+  /**
+   * NEW:
+   * Prefer stable identity for UI actions. If backend exposes instance_key, use it.
+   * Otherwise fallback to ip|via_rpi_ip.
+   */
   const getHgwRowKey = (row) =>
-    row?.via_rpi_ip ? `${row.ip}|${row.via_rpi_ip}` : row?.ip
+    row?.serial_number
+      ? `serial:${row.serial_number}`
+      : row?.instance_key
+        ? `inst:${row.instance_key}`
+        : row?.via_rpi_ip
+          ? `${row.ip}|${row.via_rpi_ip}`
+          : row?.ip
 
   /* reconnect */
   const [reconnectingKey, setReconnectingKey] = useState(null)
@@ -161,6 +172,16 @@ const HGWsPage = () => {
       render: (val) =>
         val ? <span className="hgw-table__mono">{val}</span> : <span className="hgw-table__null">—</span>,
     },
+
+    // OPTIONAL BUT USEFUL: shows instance_key if backend returns it
+    {
+      key: 'instance_key',
+      title: 'Instance',
+      width: 160,
+      render: (val) =>
+        val ? <span className="hgw-table__mono">{val}</span> : <span className="hgw-table__null">—</span>,
+    },
+
     {
       key: 'software_version',
       title: 'SW Version',

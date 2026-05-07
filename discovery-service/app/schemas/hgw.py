@@ -27,6 +27,7 @@ class HgwRead(BaseModel):
     mem_free_kb: Optional[int] = None
     mem_total_kb: Optional[int] = None
     last_seen: Optional[datetime] = None
+    instance_key: Optional[str] = None  # NEW: clé d’instance HGW (MAC ou fallback)
 
     # ── MODIFICATION : hgw_type supprimé ──────────────────────────────────
     # Remplacé par un champ calculé 'network' basé sur l'IP réelle.

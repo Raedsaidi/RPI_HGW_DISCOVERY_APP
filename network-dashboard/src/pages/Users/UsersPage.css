@@ -194,3 +194,85 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+.users-table__project-cell {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.users-table__project-name {
+  font-weight: 600;
+  color: #111827;
+}
+
+.users-table__project-ip {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #6b7280;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+.users-table__project-loading {
+  font-weight: 500;
+  font-size: 12px;
+  color: #6b7280;
+}
+.users-table__project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.users-table__project-item {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.users-table__project-name {
+  font-weight: 600;
+  color: #111827;
+}
+
+.users-table__project-ip {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #6b7280;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.users-table__project-more,
+.users-table__project-loading {
+  font-size: 12px;
+  color: #6b7280;
+}
+.users-table__project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.users-table__project-item {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.users-table__project-name {
+  font-weight: 600;
+  color: #111827;
+}
+
+.users-table__project-ip {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #6b7280;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.users-table__project-more,
+.users-table__project-loading {
+  font-size: 12px;
+  color: #6b7280;
+}

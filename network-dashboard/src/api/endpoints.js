@@ -88,9 +88,24 @@ export const discoveryApi = {
 }
 
 export const topologyApi = {
-  getLatest: () => discoveryClient.get('/topology'),
+  // ── Existing ──────────────────────────────────────────────────────────
+  getLatest: () =>
+    discoveryClient.get('/topology'),
+
   getForRun: (runId) =>
     discoveryClient.get(`/topology/${runId}`),
+
+  // ── Filter by switch (ADMIN / SUPER_ADMIN only) ───────────────────────
+  getForSwitch: (runId, switchIp) =>
+    discoveryClient.get(`/topology/${runId}/switch/${encodeURIComponent(switchIp)}`),
+
+  // ── Filter by HGW identifier (serial_number or IP) ────────────────────
+  getForHgw: (runId, hgwIdentifier) =>
+    discoveryClient.get(`/topology/${runId}/hgw/${encodeURIComponent(hgwIdentifier)}`),
+
+  // ── HGWs visible to the current user for a given run ─────────────────
+  getMyHgws: (runId) =>
+    discoveryClient.get(`/topology/${runId}/my-hgws`),
 }
 
 export const syncApi = {

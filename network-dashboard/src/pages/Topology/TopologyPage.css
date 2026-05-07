@@ -80,6 +80,113 @@
 }
 
 /* ─────────────────────────────────────────
+   View mode bar
+───────────────────────────────────────── */
+.topology-page__viewbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+/* Toggle button group */
+.topology-page__view-toggle {
+  display: flex;
+  align-items: center;
+  background: var(--neutral-3);
+  border: 1px solid var(--neutral-5);
+  border-radius: var(--radius-lg);
+  padding: 3px;
+  gap: 2px;
+}
+
+.topology-page__view-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--neutral-7);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.topology-page__view-btn:hover {
+  background: var(--neutral-1);
+  color: var(--neutral-9);
+}
+
+.topology-page__view-btn--active {
+  background: var(--neutral-1);
+  color: var(--primary-6);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Filter group (switch or hgw selector) */
+.topology-page__filter-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.topology-page__filter-icon {
+  color: var(--neutral-6);
+  flex-shrink: 0;
+}
+
+.topology-page__filter-select {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--neutral-5);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-family: var(--font-family);
+  color: var(--neutral-9);
+  background: var(--neutral-1);
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+  min-width: 220px;
+  max-width: 340px;
+}
+
+.topology-page__filter-select:focus {
+  border-color: var(--primary-5);
+  box-shadow: 0 0 0 2px var(--primary-1);
+}
+
+.topology-page__filter-loading {
+  font-size: 12px;
+  color: var(--neutral-6);
+  font-style: italic;
+}
+
+/* Active filter badge */
+.topology-page__filter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  background: var(--primary-1);
+  border: 1px solid var(--primary-3);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary-6);
+  white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────
    Canvas wrapper
 ───────────────────────────────────────── */
 .topology-page__canvas-wrap {
@@ -128,6 +235,27 @@
   max-width: 340px;
   text-align: center;
   color: var(--neutral-7);
+}
+
+/* ── Empty state ── */
+.topology-page__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 100%;
+  min-height: 400px;
+  color: var(--neutral-6);
+  font-size: 14px;
+}
+
+.topology-page__empty p {
+  margin: 0;
+  max-width: 300px;
+  text-align: center;
+  color: var(--neutral-6);
+  font-weight: 500;
 }
 
 /* ── Zoom controls ── */
@@ -235,9 +363,7 @@
   flex-shrink: 0;
 }
 
-.topology-page__legend-line--solid {
-  background: #1890ff;
-}
+.topology-page__legend-line--solid { background: #1890ff; }
 
 .topology-page__legend-line--dashed {
   background: repeating-linear-gradient(
@@ -367,7 +493,6 @@
   z-index: 1900;
 }
 
-/* 90% of screen => inset: 5% */
 .topology-page__canvas-wrap--expanded {
   position: fixed;
   inset: 5%;
@@ -376,13 +501,11 @@
   z-index: 2000;
 }
 
-/* Make canvas fill the fixed container (override min-height) */
 .topology-page__canvas-wrap--expanded .topology-page__canvas {
   height: 100%;
   min-height: 0;
 }
 
-/* Keep controls above */
 .topology-page__canvas-wrap--expanded .topology-page__zoom-controls,
 .topology-page__canvas-wrap--expanded .topology-page__legend,
 .topology-page__canvas-wrap--expanded .topology-page__detail,

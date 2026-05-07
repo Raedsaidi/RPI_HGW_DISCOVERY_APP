@@ -1,9 +1,11 @@
+# app/core/security.py
+
 import logging
-from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
+
 from app.core.config import settings
 from app.core.db import get_db
 
@@ -11,9 +13,8 @@ logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
-# Roles autorisés à modifier
 WRITE_ROLES = {"SUPER_ADMIN", "ADMIN", "PROJECT_MANAGER"}
-READ_ROLES = {"SUPER_ADMIN", "ADMIN", "PROJECT_MANAGER", "USER"}
+READ_ROLES  = {"SUPER_ADMIN", "ADMIN", "PROJECT_MANAGER", "USER"}
 
 
 def _decode_token(token: str) -> dict:
@@ -39,7 +40,7 @@ async def get_current_user(
 ) -> dict:
     payload = _decode_token(token)
     username = payload.get("sub")
-    role = payload.get("role")
+    role     = payload.get("role")
 
     if not username or not role:
         raise HTTPException(
@@ -47,6 +48,8 @@ async def get_current_user(
             detail="Invalid token payload.",
         )
 
+    # ✅ On retourne juste username + role extraits du JWT
+    # ❌ On ne fait plus de db.query(User) ici
     return {"username": username, "role": role}
 
 

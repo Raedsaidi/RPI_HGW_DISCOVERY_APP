@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from typing import Optional
 from sqlalchemy.orm import Session
+
 from app.models.rpi import Rpi, RpiFact, RpiCredentialOverride
 from app.infrastructure.rpi_client import RpiCollectedData
 
@@ -31,6 +32,7 @@ class RpiRepository:
             rpi.ip_mgmt = ip_mgmt
             if label:
                 rpi.label = label
+
         rpi.updated_at = datetime.utcnow()
         self.db.commit()
         self.db.refresh(rpi)
@@ -89,8 +91,12 @@ class RpiRepository:
             # Network
             lan_iface=data.lan_iface,
             lan_ip=data.lan_ip,
-            lan_mac=data.lan_mac,           # ← NOUVEAU
+            lan_mac=data.lan_mac,
             hgw_ip=data.hgw_ip,
+
+            # NEW
+            hgw_gateway_mac=getattr(data, "hgw_gateway_mac", None),
+
             all_ips=data.all_ips,
             # Metrics
             temp_celsius=data.temp_celsius,
@@ -109,7 +115,7 @@ class RpiRepository:
             # USB
             usb_devices=data.usb_devices,
             # Raw
-            raw_ip_addr=data.raw_ip_addr,   # ← REMPLACE raw_ifconfig
+            raw_ip_addr=data.raw_ip_addr,
             raw_ps=data.raw_ps,
         )
         self.db.add(fact)

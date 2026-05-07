@@ -12,7 +12,6 @@ class Hgw(Base):
     via_rpi_ip = Column(String(64), nullable=True)
     last_seen = Column(DateTime, nullable=True)
 
-    # Device info from ba-cli
     manufacturer = Column(String(128), nullable=True)
     model_name = Column(String(64), nullable=True)
     serial_number = Column(String(128), nullable=True, unique=True)
@@ -20,7 +19,7 @@ class Hgw(Base):
     hardware_version = Column(String(64), nullable=True)
     external_ip = Column(String(64), nullable=True)
     uptime_seconds = Column(Integer, nullable=True)
-    mem_free_kb  = Column(BigInteger, nullable=True)
+    mem_free_kb = Column(BigInteger, nullable=True)
     mem_total_kb = Column(BigInteger, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -32,11 +31,19 @@ class HgwFact(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     run_id = Column(Integer, nullable=False)
+
+    # NOTE: IP HGW (souvent 192.168.x.1)
     hgw_ip = Column(String(64), nullable=False)
+
+    # Chemin de collecte (peut être un des RPi du groupe)
     via_rpi_ip = Column(String(64), nullable=True)
+
+    # NEW: clé d’instance HGW (MAC gateway ou fallback switch|ip)
+    instance_key = Column(String(64), nullable=True)
+    
+
     collected_at = Column(DateTime, default=datetime.utcnow)
 
-    # DeviceInfo fields
     manufacturer = Column(String(128), nullable=True)
     model_name = Column(String(64), nullable=True)
     serial_number = Column(String(128), nullable=True)
@@ -44,12 +51,11 @@ class HgwFact(Base):
     hardware_version = Column(String(64), nullable=True)
     external_ip = Column(String(64), nullable=True)
     uptime_seconds = Column(Integer, nullable=True)
-    mem_free_kb  = Column(BigInteger, nullable=True)
+    mem_free_kb = Column(BigInteger, nullable=True)
     mem_total_kb = Column(BigInteger, nullable=True)
     base_mac = Column(String(32), nullable=True)
     country = Column(String(8), nullable=True)
     device_status = Column(String(32), nullable=True)
 
-    # Raw output
     raw_deviceinfo = Column(Text, nullable=True)
     ssh_error = Column(Text, nullable=True)

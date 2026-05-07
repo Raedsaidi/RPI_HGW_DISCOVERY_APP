@@ -378,3 +378,19 @@ def parse_lsusb(text: str) -> list[str]:
         if line.startswith("Bus "):
             devices.append(line)
     return devices
+
+
+def parse_ip_neigh_gateway_mac(text: str) -> Optional[str]:
+    """
+    Parse output of: ip neigh show <gateway_ip> [dev <iface>]
+    Example:
+        192.168.234.1 dev LAN lladdr dc:f5:1b:6d:f5:d0 STALE
+    Returns:
+        "DC:F5:1B:6D:F5:D0" or None
+    """
+    text = clean(text)
+    if not text:
+        return None
+
+    m = re.search(r"\blladdr\s+([0-9a-f]{2}(?::[0-9a-f]{2}){5})\b", text, re.IGNORECASE)
+    return m.group(1).upper() if m else None
