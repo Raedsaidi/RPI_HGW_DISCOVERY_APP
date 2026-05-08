@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react'
+import { useAuth } from '@/context/AuthContext'
 import RpiLogo from '@/assets/raspberry-pi.svg'
 import './Sidebar.css'
 
@@ -26,11 +27,18 @@ const NAV_ITEMS = [
 
 const Sidebar = ({ collapsed, onToggle }) => {
   const location = useLocation()
+  const { user: currentUser } = useAuth()
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/'
     return location.pathname.startsWith(path)
   }
+
+  // ✅ Hide "User Management" for USER and PROJECT_MANAGER
+  const canManageUsers = ['ADMIN', 'SUPER_ADMIN'].includes(currentUser?.role)
+  const navItems = canManageUsers
+    ? NAV_ITEMS
+    : NAV_ITEMS.filter((i) => i.key !== 'users')
 
   return (
     <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
@@ -61,7 +69,7 @@ const Sidebar = ({ collapsed, onToggle }) => {
         )}
 
         <ul className="sidebar__list">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon
             const active = isActive(item.path)
 

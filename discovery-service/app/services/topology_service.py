@@ -1,5 +1,3 @@
-# app/services/topology_service.py
-
 import logging
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -15,6 +13,7 @@ from app.schemas.user_schema import UserRole
 logger = logging.getLogger(__name__)
 
 FULL_ACCESS_ROLES = {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}
+ALL_HGW_IDENTIFIER = "ALL"
 
 
 class TopologyService:
@@ -29,6 +28,39 @@ class TopologyService:
         self.hgw_repo = HgwRepository(db)
 
     # ─────────────────────────────────────────────────────────────────────
+    # INTERNAL HELPERS
+    # ─────────────────────────────────────────────────────────────────────
+
+    def _normalize_identifiers(self, identifiers: list[str] | None) -> list[str]:
+        """
+        - strip, remove empties
+        - normalize ALL
+        - dedupe (order preserved)
+
+        IMPORTANT:
+        - "ALL" can coexist with other identifiers.
+        """
+        identifiers = identifiers or []
+        out: list[str] = []
+        seen: set[str] = set()
+
+        for x in identifiers:
+            v = (x or "").strip()
+            if not v:
+                continue
+            if v.upper() == ALL_HGW_IDENTIFIER:
+                v = ALL_HGW_IDENTIFIER
+            if v in seen:
+                continue
+            seen.add(v)
+            out.append(v)
+
+        return out
+
+    def user_has_all_hgws(self, username: str) -> bool:
+        return ALL_HGW_IDENTIFIER in self.get_user_hgw_identifiers(username)
+
+    # ─────────────────────────────────────────────────────────────────────
     # PUBLIC HELPERS
     # ─────────────────────────────────────────────────────────────────────
 
@@ -37,11 +69,8 @@ class TopologyService:
         return runs[0].id if runs else None
 
     def get_user_hgw_identifiers(self, username: str) -> list[str]:
-        """
-        Retourne les hgw_identifiers assignés à un user (via User Service).
-        Identifiers existants: serial_number ou ip (legacy).
-        """
-        return self.user_client.get_user_hgw_identifiers(username)
+        raw = self.user_client.get_user_hgw_identifiers(username)
+        return self._normalize_identifiers(raw)
 
     # ─────────────────────────────────────────────────────────────────────
     # FULL TOPOLOGY
@@ -73,7 +102,6 @@ class TopologyService:
         sw = matched[0]
         switch_rpi_ips = {rpi["ip_mgmt"] for rpi in sw.get("rpis", [])}
 
-        # NEW: inclure aussi erreurs HGW (keyed by instance_key)
         switch_hgw_keys = set()
         for rpi in sw.get("rpis", []):
             hgw = rpi.get("hgw")
@@ -102,11 +130,19 @@ class TopologyService:
     # ─────────────────────────────────────────────────────────────────────
 
     def get_topology_for_hgw(self, run_id: int, hgw_identifier: str) -> dict:
+        if (hgw_identifier or "").strip().upper() == ALL_HGW_IDENTIFIER:
+            return self.get_topology_for_run(run_id)
+
         full = self.get_topology_for_run(run_id)
         return self._filter_by_hgw_identifiers(full, [hgw_identifier])
 
     def get_topology_for_user(self, run_id: int, username: str) -> dict:
         identifiers = self.get_user_hgw_identifiers(username)
+
+        # ✅ ALL present => full topology
+        if ALL_HGW_IDENTIFIER in identifiers:
+            return self.get_topology_for_run(run_id)
+
         if not identifiers:
             full = self.get_topology_for_run(run_id)
             return {
@@ -118,6 +154,7 @@ class TopologyService:
                 "errors": [],
                 "filter": {"type": "user_hgw", "identifiers": []},
             }
+
         full = self.get_topology_for_run(run_id)
         result = self._filter_by_hgw_identifiers(full, identifiers)
         result["filter"]["type"] = "user_hgw"
@@ -133,6 +170,18 @@ class TopologyService:
             return []
 
         full = self.get_topology_for_run(run_id)
+
+        has_all = ALL_HGW_IDENTIFIER in identifiers
+        specific = [x for x in identifiers if x != ALL_HGW_IDENTIFIER]
+
+        # ALL seul => retourne tous (pour dropdown full)
+        if has_all and not specific:
+            return self._list_all_hgws_from_topology(full)
+
+        # ALL + liste => retourne seulement la liste (HGWs affectés)
+        if specific:
+            identifiers = specific
+
         seen: dict[str, dict] = {}
 
         for sw in full.get("switches", []):
@@ -145,7 +194,6 @@ class TopologyService:
                 serial = hgw.get("serial_number")
                 instance_key = hgw.get("instance_key")
 
-                # matching selon identifiers (legacy = serial ou IP)
                 matched_id = None
                 for ident in identifiers:
                     if (serial and ident == serial) or (hgw_ip and ident == hgw_ip):
@@ -154,7 +202,6 @@ class TopologyService:
                 if not matched_id:
                     continue
 
-                # NEW: ne plus dédupliquer par IP seule
                 key = serial or instance_key or hgw_ip
                 if key not in seen:
                     seen[key] = {
@@ -171,16 +218,44 @@ class TopologyService:
 
         return list(seen.values())
 
+    def _list_all_hgws_from_topology(self, full: dict) -> list[dict]:
+        seen: dict[str, dict] = {}
+
+        for sw in full.get("switches", []):
+            for rpi in sw.get("rpis", []):
+                hgw = rpi.get("hgw")
+                if not hgw:
+                    continue
+
+                serial = hgw.get("serial_number")
+                inst = hgw.get("instance_key")
+                ip = hgw.get("ip")
+
+                dedup_key = serial or inst or ip
+                if not dedup_key or dedup_key in seen:
+                    continue
+
+                seen[dedup_key] = {
+                    "hgw_identifier": serial or ip,
+                    "ip": ip,
+                    "serial_number": serial,
+                    "instance_key": inst,
+                    "model_name": hgw.get("model_name"),
+                    "manufacturer": hgw.get("manufacturer"),
+                    "external_ip": hgw.get("external_ip"),
+                    "ssh_success": hgw.get("ssh_success"),
+                    "network": hgw.get("network"),
+                }
+
+        return list(seen.values())
+
     # ─────────────────────────────────────────────────────────────────────
     # PRIVATE : FILTER BY HGW IDENTIFIERS
     # ─────────────────────────────────────────────────────────────────────
 
     def _filter_by_hgw_identifiers(self, full: dict, identifiers: list[str]) -> dict:
-        """
-        Identifiers = serial ou IP (legacy).
-        Note: si identifier=IP (ex 192.168.1.1) et plusieurs sites partagent la même IP,
-        alors ce filtre matchera plusieurs HGW (ce qui est logique).
-        """
+        identifiers = self._normalize_identifiers(identifiers)
+
         id_set = set(identifiers)
         filtered_switches = []
         total_assigned = 0
@@ -267,7 +342,6 @@ class TopologyService:
 
         hgw_facts = self.hgw_repo.get_facts_for_run(run_id)
 
-        # Legacy maps (kept as fallback)
         hgw_fact_path_map: dict[str, object] = {}
         hgw_fact_ip_map: dict[str, object] = {}
         hgw_ip_counts: dict[str, int] = {}
@@ -303,7 +377,6 @@ class TopologyService:
                 ):
                     hgw_fact_ip_map[fact.hgw_ip] = fact
 
-        # NEW: primary map by instance_key (gateway MAC or fallback switch|ip)
         hgw_fact_instance_map: dict[str, object] = {}
         for fact in hgw_facts:
             key = getattr(fact, "instance_key", None)
@@ -318,10 +391,6 @@ class TopologyService:
 
         errors = self.discovery_repo.get_errors_for_run(run_id)
 
-        # NOTE:
-        # - rpi errors keyed by rpi_ip
-        # - switch errors keyed by switch_ip
-        # - hgw errors: in our new DiscoveryService we save device_ip = instance_key
         rpi_errors = {e.device_ip: e.error for e in errors if e.device_type == "rpi"}
         hgw_errors = {e.device_ip: e.error for e in errors if e.device_type == "hgw"}
         switch_errors = {e.device_ip: e.error for e in errors if e.device_type == "switch"}
@@ -335,7 +404,7 @@ class TopologyService:
             rpi_fact_map=rpi_fact_map,
             hgw_fact_path_map=hgw_fact_path_map,
             hgw_fact_ip_map=hgw_fact_ip_map,
-            hgw_fact_instance_map=hgw_fact_instance_map,  # NEW
+            hgw_fact_instance_map=hgw_fact_instance_map,
             rpi_errors=rpi_errors,
             hgw_errors=hgw_errors,
             switch_errors=switch_errors,
@@ -377,19 +446,14 @@ class TopologyService:
                 instance_key = None
 
                 if hgw_ip:
-                    # instance_key priority:
-                    # 1) gateway mac collected on the RPi
                     gw_mac = getattr(rpi_fact, "hgw_gateway_mac", None) if rpi_fact else None
                     if gw_mac:
                         instance_key = str(gw_mac).upper()
                     else:
-                        # fallback must match DiscoveryService fallback
                         instance_key = f"{sw.ip}|{hgw_ip}"
 
-                    # 1) Primary: match by instance_key
                     hgw_fact = hgw_fact_instance_map.get(instance_key)
 
-                    # 2) Fallback legacy
                     if not hgw_fact:
                         hgw_fact = hgw_fact_path_map.get(f"{hgw_ip}|{rpi_ip}")
                         if not hgw_fact:
@@ -437,7 +501,6 @@ class TopologyService:
                 "rpis":        rpis_on_switch,
             })
 
-        # Unassigned RPis
         unassigned = []
         for entry in rpi_entries:
             if entry.ip_mgmt not in all_assigned_rpis:
@@ -481,13 +544,12 @@ class TopologyService:
         hgw_fact,
         hgw_errors: dict,
     ) -> dict:
-        # With new discovery, HGW errors are keyed by instance_key (MAC gateway or fallback)
         err_key = instance_key or hgw_ip
 
         return {
             "ip":               hgw_ip,
             "via_rpi_ip":       via_rpi_ip,
-            "instance_key":     instance_key,  # NEW: critical to avoid IP-based merges
+            "instance_key":     instance_key,
             "network":          _get_network_prefix(hgw_ip),
             "manufacturer":     hgw_fact.manufacturer     if hgw_fact else None,
             "model_name":       hgw_fact.model_name       if hgw_fact else None,
@@ -502,8 +564,6 @@ class TopologyService:
             "ssh_error":        hgw_errors.get(err_key),
         }
 
-
-# ── Helper ───────────────────────────────────────────────────────────────────
 
 def _get_network_prefix(ip: str) -> Optional[str]:
     if not ip:

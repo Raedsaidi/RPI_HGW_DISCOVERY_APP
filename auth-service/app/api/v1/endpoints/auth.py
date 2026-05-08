@@ -33,11 +33,20 @@ from app.models.refresh_token import RefreshToken
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
+# =========================================================
+# Reserved identifier for full-access assignment
+# =========================================================
+ALL_HGW_IDENTIFIER = "ALL"
+
 
 # =========================================================
 # Microservices helper: validate HGW exists via discovery-service
 # =========================================================
 def ensure_hgw_exists(identifier: str, request: Request) -> None:
+    # ✅ Allow the reserved identifier "ALL" (no discovery validation)
+    if (identifier or "").strip().upper() == ALL_HGW_IDENTIFIER:
+        return
+
     base = getattr(settings, "DISCOVERY_SERVICE_URL", None) or "http://discovery_service:8001"
     base = base.rstrip("/")
     url = f"{base}/api/v1/hgws/{identifier}"
@@ -71,18 +80,43 @@ def ensure_hgw_exists(identifier: str, request: Request) -> None:
 
 
 def _normalize_identifiers(ids: list[str]) -> list[str]:
-    # strip + remove empties + dedupe while keeping order
-    out = []
-    seen = set()
+    """
+    strip + remove empties + dedupe while keeping order
+    + normalize ALL
+
+    IMPORTANT:
+    - "ALL" can coexist with other identifiers.
+      Example: ["ALL", "serial1", "serial2"] is valid.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+
     for x in ids:
         v = (x or "").strip()
         if not v:
             continue
+
+        if v.upper() == ALL_HGW_IDENTIFIER:
+            v = ALL_HGW_IDENTIFIER
+
         if v in seen:
             continue
         seen.add(v)
         out.append(v)
+
     return out
+
+
+def _legacy_project_hgw_ip(ids: list[str]) -> str | None:
+    """
+    project_hgw_ip is legacy (1 value).
+    - Do not store ALL there.
+    - Pick the first identifier != ALL, else None.
+    """
+    for v in ids:
+        if v != ALL_HGW_IDENTIFIER:
+            return v
+    return None
 
 
 # =========================================================
@@ -242,8 +276,8 @@ def create_user_admin(
         password_hash=get_password_hash(user_in.password),
         role=user_in.role.value,
         is_active=True,
-        # legacy column (optional) — keep for backward compat; store first element
-        project_hgw_ip=(ids[0] if ids else None),
+        # legacy column: do NOT store "ALL" there
+        project_hgw_ip=_legacy_project_hgw_ip(ids),
     )
 
     db.add(user)
@@ -306,7 +340,7 @@ def list_users(
                 role=UserRole(u.role),
                 is_active=u.is_active,
                 password_hash=u.password_hash,
-                project_hgws=u.project_hgws,                 # ✅ NEW
+                project_hgws=u.project_hgws,
                 project_hgw_ip=getattr(u, "project_hgw_ip", None),  # legacy
                 created_at=u.created_at,
                 last_login_at=u.last_login_at,
@@ -394,40 +428,49 @@ def update_user_admin(
     if "project_hgws" in user_in.model_fields_set:
         ids = _normalize_identifiers(list(user_in.project_hgws or []))
 
-        # validate all identifiers
+        # validate all identifiers (ALL is allowed)
         for identifier in ids:
             ensure_hgw_exists(identifier, request)
 
         # delete old rows first
         user.user_projects.clear()
-        db.flush()  # ✅ IMPORTANT: exécute les DELETE avant les INSERT (évite duplicate uq_user_hgw)
+        db.flush()
 
         # insert new rows
         for identifier in ids:
             user.user_projects.append(UserProject(hgw_identifier=identifier))
 
-        # legacy column (si tu la gardes encore)
-        user.project_hgw_ip = ids[0] if ids else None
+        # legacy column (do NOT store ALL there)
+        user.project_hgw_ip = _legacy_project_hgw_ip(ids)
 
     # Support legacy (si quelqu’un envoie encore project_hgw_ip)
     elif "project_hgw_ip" in user_in.model_fields_set:
         if user_in.project_hgw_ip is None or user_in.project_hgw_ip.strip() == "":
             user.user_projects.clear()
-            db.flush()  # ✅ IMPORTANT
+            db.flush()
             user.project_hgw_ip = None
         else:
             identifier = user_in.project_hgw_ip.strip()
-            ensure_hgw_exists(identifier, request)
 
-            user.user_projects.clear()
-            db.flush()  # ✅ IMPORTANT
+            # legacy can't express a list: treat "ALL" as "ALL only"
+            if identifier.upper() == ALL_HGW_IDENTIFIER:
+                user.user_projects.clear()
+                db.flush()
+                user.user_projects.append(UserProject(hgw_identifier=ALL_HGW_IDENTIFIER))
+                user.project_hgw_ip = None
+            else:
+                ensure_hgw_exists(identifier, request)
 
-            user.user_projects.append(UserProject(hgw_identifier=identifier))
-            user.project_hgw_ip = identifier
+                user.user_projects.clear()
+                db.flush()
+
+                user.user_projects.append(UserProject(hgw_identifier=identifier))
+                user.project_hgw_ip = identifier
 
     db.commit()
     db.refresh(user)
     return user
+
 
 @router.delete("/users/{user_id}", status_code=204)
 def delete_user(
@@ -461,11 +504,8 @@ def get_user_hgws_internal(
     """
     Endpoint INTERNE appelé par le discovery-service (topology_service)
     pour récupérer les HGW identifiers d'un utilisateur.
-    
-    Remplace : db.query(User).filter(User.username == username).first()
-    que topology_service ne peut plus faire car User est dans auth-service.
-    
-    Retourne : ["serial123", "192.168.1.1", ...]
+
+    Retourne : ["ALL", "serial123", ...] ou ["serial123", ...] etc.
     """
     user = (
         db.query(User)
@@ -475,5 +515,5 @@ def get_user_hgws_internal(
     )
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
-    
-    return user.project_hgws  # ["serial123", "192.168.1.1", ...]
+
+    return user.project_hgws

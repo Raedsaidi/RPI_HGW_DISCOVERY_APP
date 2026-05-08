@@ -10,7 +10,10 @@ import {
   GitBranch,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
-import { useNotifications, NOTIFICATION_MESSAGES } from '@/context/NotificationContext'
+import {
+  useNotifications,
+  NOTIFICATION_MESSAGES,
+} from '@/context/NotificationContext'
 import { getFriendlyMessage } from '@/utils/messageHelper'
 import { authApi } from '@/api/endpoints'
 import './LoginPage.css'
@@ -63,36 +66,19 @@ const LoginPage = () => {
     setError('')
 
     try {
-      const form = new URLSearchParams()
-      form.append('username', username)
-      form.append('password', password)
+      // 1) login -> tokens
+      const res = await authApi.login(username, password)
+      const tokens = res.data
 
-      const response = await fetch('/api/v1/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: form.toString(),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Login failed: ${response.status}`)
+      if (!tokens?.access_token) {
+        throw new Error('Login failed: missing access token')
       }
 
-      const tokens = await response.json()
-
-      localStorage.setItem('nd_access_token', tokens.access_token)
-      localStorage.setItem('nd_refresh_token', tokens.refresh_token)
-
-      const storedToken = localStorage.getItem('nd_access_token')
-      if (!storedToken) throw new Error('Failed to store access token')
-
-      await new Promise((resolve) => setTimeout(resolve, 100))
-
+      // 2) me -> userData (contains project_hgws)
       const meResponse = await fetch('/api/v1/auth/me', {
         method: 'GET',
         headers: {
-          Authorization: `Bearer ${storedToken}`,
+          Authorization: `Bearer ${tokens.access_token}`,
           'Content-Type': 'application/json',
         },
       })
@@ -103,12 +89,14 @@ const LoginPage = () => {
 
       const userData = await meResponse.json()
 
+      // 3) store everything via AuthContext (localStorage included there)
       login(tokens, userData)
+
       notify('success', NOTIFICATION_MESSAGES.SUCCESS.LOGIN_SUCCESS)
       navigate('/')
     } catch (err) {
       const technicalMessage =
-        err.response?.data?.detail || err.message || 'Login failed'
+        err?.response?.data?.detail || err?.message || 'Login failed'
       const friendlyMessage = getFriendlyMessage('error', technicalMessage)
 
       setError(friendlyMessage)
@@ -220,7 +208,11 @@ const LoginPage = () => {
               </div>
             </div>
 
-            <button type="submit" className="login-page__submit" disabled={loading}>
+            <button
+              type="submit"
+              className="login-page__submit"
+              disabled={loading}
+            >
               {loading ? (
                 <>
                   <span className="login-page__submit-spinner" />

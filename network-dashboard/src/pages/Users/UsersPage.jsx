@@ -24,6 +24,8 @@ import { useNotification } from '@/context/NotificationContext'
 import dayjs from 'dayjs'
 import './UsersPage.css'
 
+const ALL_HGW_IDENTIFIER = 'ALL'
+
 /* ── Role config ── */
 const ROLE_CONFIG = {
   SUPER_ADMIN: {
@@ -74,11 +76,6 @@ const RoleBadge = ({ role }) => {
   )
 }
 
-/**
- * Charge toutes les pages HGWs et construit:
- * - options: pour la sélection
- * - index: identifier -> hgw (identifier = serial_number sinon ip)
- */
 async function fetchAllHgws() {
   const PAGE_SIZE = 100
   let page = 1
@@ -93,7 +90,6 @@ async function fetchAllHgws() {
     page += 1
   }
 
-  // Construire options + index
   const index = {}
   const options = []
 
@@ -101,23 +97,21 @@ async function fetchAllHgws() {
     const identifier = h?.serial_number || h?.ip
     if (!identifier) continue
 
-    // index par identifiant unique (serial)
     if (h?.serial_number) index[h.serial_number] = h
-    // fallback index par ip (compat / anciens)
     if (h?.ip) index[h.ip] = h
 
     options.push({
       value: identifier,
-      label: `${h.model_name || h.manufacturer || 'HGW'} — ${h.ip}${h.serial_number ? ` (${h.serial_number})` : ''}`,
+      label: `${h.model_name || h.manufacturer || 'HGW'} — ${h.ip}${
+        h.serial_number ? ` (${h.serial_number})` : ''
+      }`,
       ip: h.ip,
       model_name: h.model_name,
       serial_number: h.serial_number,
     })
   }
 
-  // tri stable
   options.sort((a, b) => a.label.localeCompare(b.label))
-
   return { options, index }
 }
 
@@ -130,18 +124,15 @@ const UsersPage = () => {
   const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
 
-  /* HGWs data (loaded once here, shared with modals + table render) */
   const [hgwOptions, setHgwOptions] = useState([])
   const [hgwIndex, setHgwIndex] = useState({})
   const [hgwsLoading, setHgwsLoading] = useState(false)
 
-  /* filters */
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 25
 
-  /* modals */
   const [createOpen, setCreateOpen] = useState(false)
   const [editTarget, setEditTarget] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -175,7 +166,6 @@ const UsersPage = () => {
       console.error(e)
       setHgwOptions([])
       setHgwIndex({})
-      // pas bloquant
     } finally {
       setHgwsLoading(false)
     }
@@ -212,133 +202,151 @@ const UsersPage = () => {
     return false
   }
 
-  const columns = useMemo(() => ([
-    {
-      key: 'id',
-      title: '#',
-      width: 60,
-      render: (val) => <span className="users-table__id">#{val}</span>,
-    },
-    {
-      key: 'full_name',
-      title: 'Full Name',
-      render: (val, row) => (
-        <div className="users-table__name-cell">
-          <div className="users-table__avatar">
-            {val
-              ? val.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
-              : row.username.slice(0, 2).toUpperCase()}
-          </div>
-          <div className="users-table__name-info">
-            <span className="users-table__full-name">{val || '—'}</span>
-            <span className="users-table__username">@{row.username}</span>
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'email',
-      title: 'Email',
-      render: (val) => <span className="users-table__email">{val}</span>,
-    },
-    {
-      key: 'role',
-      title: 'Role',
-      width: 160,
-      render: (val) => <RoleBadge role={val} />,
-    },
-
-    // ✅ 0..n HGWs
-    {
-      key: 'project_hgws',
-      title: 'Projects (HGW)',
-      width: 340,
-      render: (val, row) => {
-        const list = Array.isArray(row.project_hgws) ? row.project_hgws : []
-        if (list.length === 0) return <span className="users-table__null">—</span>
-
-        const max = 2
-        const shown = list.slice(0, max)
-        const rest = list.length - shown.length
-
-        return (
-          <div className="users-table__project-list">
-            {shown.map((identifier, idx) => {
-              const h = hgwIndex[identifier]
-              const name = h?.model_name || h?.manufacturer || h?.serial_number || 'HGW'
-              const ip = h?.ip || identifier
-
-              return (
-                <div key={`${identifier}-${idx}`} className="users-table__project-item">
-                  <div className="users-table__project-name">{name}</div>
-                  <div className="users-table__project-ip">{ip}</div>
-                </div>
-              )
-            })}
-
-            {rest > 0 && <div className="users-table__project-more">+{rest} more</div>}
-            {hgwsLoading && <div className="users-table__project-loading">(loading HGWs...)</div>}
-          </div>
-        )
+  const columns = useMemo(
+    () => [
+      {
+        key: 'id',
+        title: '#',
+        width: 60,
+        render: (val) => <span className="users-table__id">#{val}</span>,
       },
-    },
+      {
+        key: 'full_name',
+        title: 'Full Name',
+        render: (val, row) => (
+          <div className="users-table__name-cell">
+            <div className="users-table__avatar">
+              {val
+                ? val
+                    .split(' ')
+                    .map((w) => w[0])
+                    .join('')
+                    .toUpperCase()
+                    .slice(0, 2)
+                : row.username.slice(0, 2).toUpperCase()}
+            </div>
+            <div className="users-table__name-info">
+              <span className="users-table__full-name">{val || '—'}</span>
+              <span className="users-table__username">@{row.username}</span>
+            </div>
+          </div>
+        ),
+      },
+      {
+        key: 'email',
+        title: 'Email',
+        render: (val) => <span className="users-table__email">{val}</span>,
+      },
+      {
+        key: 'role',
+        title: 'Role',
+        width: 160,
+        render: (val) => <RoleBadge role={val} />,
+      },
 
-    {
-      key: 'is_active',
-      title: 'Status',
-      width: 100,
-      align: 'center',
-      render: (val) => <StatusBadge status={val ? 'active' : 'disabled'} />,
-    },
-    {
-      key: 'created_at',
-      title: 'Created',
-      render: (val) =>
-        val ? (
-          <span className="users-table__date">{dayjs(val).format('MMM D, YYYY')}</span>
-        ) : (
-          <span className="users-table__null">—</span>
+      // ✅ 0..n HGWs (supports ALL + list)
+      {
+        key: 'project_hgws',
+        title: 'Projects (HGW)',
+        width: 340,
+        render: (val, row) => {
+          const list = Array.isArray(row.project_hgws) ? row.project_hgws : []
+          if (list.length === 0) return <span className="users-table__null">—</span>
+
+          const hasAll = list.includes(ALL_HGW_IDENTIFIER)
+          const others = list.filter((x) => x !== ALL_HGW_IDENTIFIER)
+
+          const max = 2
+          const shown = others.slice(0, max)
+          const rest = others.length - shown.length
+
+          return (
+            <div className="users-table__project-list">
+              {hasAll && (
+                <div className="users-table__project-item">
+                  <div className="users-table__project-name">All gateways</div>
+                  <div className="users-table__project-ip">ALL</div>
+                </div>
+              )}
+
+              {shown.map((identifier, idx) => {
+                const h = hgwIndex[identifier]
+                const name = h?.model_name || h?.manufacturer || h?.serial_number || 'HGW'
+                const ip = h?.ip || identifier
+
+                return (
+                  <div key={`${identifier}-${idx}`} className="users-table__project-item">
+                    <div className="users-table__project-name">{name}</div>
+                    <div className="users-table__project-ip">{ip}</div>
+                  </div>
+                )
+              })}
+
+              {rest > 0 && <div className="users-table__project-more">+{rest} more</div>}
+              {hgwsLoading && <div className="users-table__project-loading">(loading HGWs...)</div>}
+            </div>
+          )
+        },
+      },
+
+      {
+        key: 'is_active',
+        title: 'Status',
+        width: 100,
+        align: 'center',
+        render: (val) => <StatusBadge status={val ? 'active' : 'disabled'} />,
+      },
+      {
+        key: 'created_at',
+        title: 'Created',
+        render: (val) =>
+          val ? (
+            <span className="users-table__date">{dayjs(val).format('MMM D, YYYY')}</span>
+          ) : (
+            <span className="users-table__null">—</span>
+          ),
+      },
+      {
+        key: 'last_login_at',
+        title: 'Last Login',
+        render: (val) =>
+          val ? (
+            <span className="users-table__date">{dayjs(val).format('MMM D, HH:mm')}</span>
+          ) : (
+            <span className="users-table__null">Never</span>
+          ),
+      },
+      {
+        key: 'actions',
+        title: '',
+        width: 80,
+        align: 'right',
+        render: (_, row) => (
+          <div className="users-table__actions">
+            {canEdit(row) && (
+              <button
+                className="users-table__action-btn users-table__action-btn--edit"
+                title="Edit user"
+                onClick={() => setEditTarget(row)}
+              >
+                <Pencil size={15} />
+              </button>
+            )}
+            {canDelete(row) && (
+              <button
+                className="users-table__action-btn users-table__action-btn--delete"
+                title="Delete user"
+                onClick={() => setDeleteTarget(row)}
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
+          </div>
         ),
-    },
-    {
-      key: 'last_login_at',
-      title: 'Last Login',
-      render: (val) =>
-        val ? (
-          <span className="users-table__date">{dayjs(val).format('MMM D, HH:mm')}</span>
-        ) : (
-          <span className="users-table__null">Never</span>
-        ),
-    },
-    {
-      key: 'actions',
-      title: '',
-      width: 80,
-      align: 'right',
-      render: (_, row) => (
-        <div className="users-table__actions">
-          {canEdit(row) && (
-            <button
-              className="users-table__action-btn users-table__action-btn--edit"
-              title="Edit user"
-              onClick={() => setEditTarget(row)}
-            >
-              <Pencil size={15} />
-            </button>
-          )}
-          {canDelete(row) && (
-            <button
-              className="users-table__action-btn users-table__action-btn--delete"
-              title="Delete user"
-              onClick={() => setDeleteTarget(row)}
-            >
-              <Trash2 size={15} />
-            </button>
-          )}
-        </div>
-      ),
-    },
-  ]), [canDelete, canEdit, hgwIndex, hgwsLoading])
+      },
+    ],
+    [canDelete, canEdit, hgwIndex, hgwsLoading]
+  )
 
   const roleStats = Object.entries(ROLE_CONFIG).map(([key, cfg]) => ({
     role: key,

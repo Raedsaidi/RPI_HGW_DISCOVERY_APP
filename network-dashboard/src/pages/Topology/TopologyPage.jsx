@@ -40,13 +40,17 @@ const ICONS = { switch: '⇄', rpi: '◉', hgw: '⊙' }
 
 // Roles that can see the full topology / switch view
 const FULL_ACCESS_ROLES = ['SUPER_ADMIN', 'ADMIN']
+
+// ✅ NEW: reserved identifier (backend)
+const ALL_HGW_IDENTIFIER = 'ALL'
+
 // All 3 view modes
 const VIEW_ALL = 'all'
 const VIEW_SWITCH = 'switch'
 const VIEW_HGW = 'hgw'
 
 /* ─────────────────────────────────────────
-   Helpers (NEW)
+   Helpers
 ───────────────────────────────────────── */
 const shortKey = (k) => {
   if (!k) return ''
@@ -88,10 +92,15 @@ const normalizeHgwsForSelector = (list) => {
     const model = first.model_name || first.ip || g.value
     const serial = first.serial_number
     const count = g.instances.length
-    const instKeys = [...new Set(g.instances.map((x) => x.instance_key).filter(Boolean))]
+    const instKeys = [
+      ...new Set(g.instances.map((x) => x.instance_key).filter(Boolean)),
+    ]
 
     const instLabel = instKeys.length
-      ? ` [${instKeys.slice(0, 2).map(shortKey).join(', ')}${instKeys.length > 2 ? '…' : ''}]`
+      ? ` [${instKeys
+          .slice(0, 2)
+          .map(shortKey)
+          .join(', ')}${instKeys.length > 2 ? '…' : ''}]`
       : ''
 
     const label = serial
@@ -103,7 +112,7 @@ const normalizeHgwsForSelector = (list) => {
 }
 
 /* ─────────────────────────────────────────
-   parseTopology (UPDATED: uses instance_key)
+   parseTopology
 ───────────────────────────────────────── */
 const parseTopology = (data) => {
   if (!data) return { nodes: [], links: [] }
@@ -116,7 +125,13 @@ const parseTopology = (data) => {
 
   switches.forEach((sw) => {
     const id = `sw-${sw.ip}`
-    nodes.push({ id, ip: sw.ip, label: sw.name || sw.ip, type: 'switch', data: sw })
+    nodes.push({
+      id,
+      ip: sw.ip,
+      label: sw.name || sw.ip,
+      type: 'switch',
+      data: sw,
+    })
     nodeMap.set(sw.ip, id)
   })
 
@@ -152,7 +167,11 @@ const parseTopology = (data) => {
     nodeMap.set(rpi.ip_mgmt, id)
 
     if (rpi.switch_ip && nodeMap.has(rpi.switch_ip)) {
-      links.push({ source: nodeMap.get(rpi.switch_ip), target: id, type: 'switch-rpi' })
+      links.push({
+        source: nodeMap.get(rpi.switch_ip),
+        target: id,
+        type: 'switch-rpi',
+      })
     }
 
     // HGW (shared for N RPis if same instance_key)
@@ -246,7 +265,10 @@ const TopologyPage = () => {
   const [expanded, setExpanded] = useState(false)
 
   // ── View mode state ──
-  const isFullAccess = FULL_ACCESS_ROLES.includes(user?.role)
+
+  const hasAllAssigned = (user?.project_hgws || []).includes(ALL_HGW_IDENTIFIER)
+  const isFullAccess = FULL_ACCESS_ROLES.includes(user?.role) || hasAllAssigned
+
   const [viewMode, setViewMode] = useState(isFullAccess ? VIEW_ALL : VIEW_HGW)
   const [selectedSwitchIp, setSelectedSwitchIp] = useState('')
   const [selectedHgwId, setSelectedHgwId] = useState('')
@@ -271,6 +293,10 @@ const TopologyPage = () => {
       setSelectedSwitchIp(list[0].ip)
     }
   }, [topology, viewMode, selectedSwitchIp])
+
+  useEffect(() => {
+    setViewMode(isFullAccess ? VIEW_ALL : VIEW_HGW)
+  }, [isFullAccess])
 
   /* ── fetch available HGWs for this run ── */
   const fetchMyHgws = useCallback(
@@ -419,10 +445,7 @@ const TopologyPage = () => {
   /* ── live polling while run is in progress ── */
   useEffect(() => {
     if (!topology?.run_id || topology.run_status !== 'running') return
-    const t = setInterval(
-      () => fetchTopology(topology.run_id, { silent: true }),
-      1500
-    )
+    const t = setInterval(() => fetchTopology(topology.run_id, { silent: true }), 1500)
     return () => clearInterval(t)
   }, [topology?.run_id, topology?.run_status, fetchTopology])
 
@@ -445,10 +468,7 @@ const TopologyPage = () => {
 
       const defs = svg.append('defs')
       const glow = defs.append('filter').attr('id', 'topo-glow')
-      glow
-        .append('feGaussianBlur')
-        .attr('stdDeviation', '3')
-        .attr('result', 'coloredBlur')
+      glow.append('feGaussianBlur').attr('stdDeviation', '3').attr('result', 'coloredBlur')
       const merge = glow.append('feMerge')
       merge.append('feMergeNode').attr('in', 'coloredBlur')
       merge.append('feMergeNode').attr('in', 'SourceGraphic')
@@ -497,9 +517,7 @@ const TopologyPage = () => {
         .force('y', d3.forceY(H / 2).strength(0.04))
         .force(
           'collision',
-          d3
-            .forceCollide()
-            .radius((d) => NODE_RADIUS[d.type] + 22)
+          d3.forceCollide().radius((d) => NODE_RADIUS[d.type] + 22)
         )
 
       svg.on('click', () => setSelectedNode(null))
@@ -592,9 +610,7 @@ const TopologyPage = () => {
       .attr('class', 'topo-node__pulse')
       .attr('r', (d) => NODE_RADIUS[d.type] + 6)
       .attr('fill', 'none')
-      .attr('stroke', (d) =>
-        isFailedNode(d) ? FAILED_COLOR : NODE_COLORS[d.type].fill
-      )
+      .attr('stroke', (d) => (isFailedNode(d) ? FAILED_COLOR : NODE_COLORS[d.type].fill))
       .attr('stroke-width', 1.5)
       .attr('opacity', 0.18)
 
@@ -602,25 +618,15 @@ const TopologyPage = () => {
       .append('circle')
       .attr('class', 'topo-node__circle')
       .attr('r', (d) => NODE_RADIUS[d.type])
-      .attr('fill', (d) =>
-        isFailedNode(d) ? FAILED_COLOR : NODE_COLORS[d.type].fill
-      )
+      .attr('fill', (d) => (isFailedNode(d) ? FAILED_COLOR : NODE_COLORS[d.type].fill))
       .attr('stroke', '#fff')
       .attr('stroke-width', 3)
       .attr('filter', 'url(#topo-glow)')
       .on('mouseover', function (event, d) {
-        d3.select(this)
-          .transition()
-          .duration(160)
-          .attr('r', NODE_RADIUS[d.type] + 5)
-          .attr('stroke-width', 4)
+        d3.select(this).transition().duration(160).attr('r', NODE_RADIUS[d.type] + 5).attr('stroke-width', 4)
       })
       .on('mouseout', function (event, d) {
-        d3.select(this)
-          .transition()
-          .duration(160)
-          .attr('r', NODE_RADIUS[d.type])
-          .attr('stroke-width', 3)
+        d3.select(this).transition().duration(160).attr('r', NODE_RADIUS[d.type]).attr('stroke-width', 3)
       })
 
     nodeEnter
@@ -633,14 +639,7 @@ const TopologyPage = () => {
       .attr('font-weight', '600')
       .text((d) => ICONS[d.type] || '●')
 
-    nodeEnter
-      .append('rect')
-      .attr('rx', 4)
-      .attr('ry', 4)
-      .attr('fill', '#fff')
-      .attr('stroke', (d) => NODE_COLORS[d.type].border)
-      .attr('stroke-width', 1)
-      .attr('opacity', 0.92)
+    nodeEnter.append('rect').attr('rx', 4).attr('ry', 4).attr('fill', '#fff').attr('stroke', (d) => NODE_COLORS[d.type].border).attr('stroke-width', 1).attr('opacity', 0.92)
 
     nodeEnter
       .append('text')
@@ -669,16 +668,8 @@ const TopologyPage = () => {
     nodeEnter.transition().duration(450).attr('opacity', 1)
 
     nodeSel = nodeEnter.merge(nodeSel)
-    nodeSel
-      .select('circle.topo-node__pulse')
-      .attr('stroke', (d) =>
-        isFailedNode(d) ? FAILED_COLOR : NODE_COLORS[d.type].fill
-      )
-    nodeSel
-      .select('circle.topo-node__circle')
-      .attr('fill', (d) =>
-        isFailedNode(d) ? FAILED_COLOR : NODE_COLORS[d.type].fill
-      )
+    nodeSel.select('circle.topo-node__pulse').attr('stroke', (d) => (isFailedNode(d) ? FAILED_COLOR : NODE_COLORS[d.type].fill))
+    nodeSel.select('circle.topo-node__circle').attr('fill', (d) => (isFailedNode(d) ? FAILED_COLOR : NODE_COLORS[d.type].fill))
 
     nodeSel.each(function () {
       const textEl = d3.select(this).select('.topo-node__label').node()
@@ -715,24 +706,15 @@ const TopologyPage = () => {
   /* ── zoom controls ── */
   const handleZoomIn = () => {
     if (!zoomRef.current) return
-    zoomRef.current.svg
-      .transition()
-      .duration(300)
-      .call(zoomRef.current.zoom.scaleBy, 1.4)
+    zoomRef.current.svg.transition().duration(300).call(zoomRef.current.zoom.scaleBy, 1.4)
   }
   const handleZoomOut = () => {
     if (!zoomRef.current) return
-    zoomRef.current.svg
-      .transition()
-      .duration(300)
-      .call(zoomRef.current.zoom.scaleBy, 0.7)
+    zoomRef.current.svg.transition().duration(300).call(zoomRef.current.zoom.scaleBy, 0.7)
   }
   const handleFit = () => {
     if (!zoomRef.current) return
-    zoomRef.current.svg
-      .transition()
-      .duration(500)
-      .call(zoomRef.current.zoom.transform, d3.zoomIdentity)
+    zoomRef.current.svg.transition().duration(500).call(zoomRef.current.zoom.transform, d3.zoomIdentity)
   }
 
   /* ── handle view mode change ── */
@@ -756,9 +738,7 @@ const TopologyPage = () => {
         : 'Select a switch to view its topology'
     }
     if (viewMode === VIEW_HGW) {
-      return selectedHgwId
-        ? 'No devices found for this gateway'
-        : 'Select a gateway to view its topology'
+      return selectedHgwId ? 'No devices found for this gateway' : 'Select a gateway to view its topology'
     }
     return 'No topology data available'
   }
@@ -769,28 +749,21 @@ const TopologyPage = () => {
   return (
     <div className="topology-page">
       {expanded && (
-        <div
-          className="topology-page__backdrop"
-          onClick={() => setExpanded(false)}
-        />
+        <div className="topology-page__backdrop" onClick={() => setExpanded(false)} />
       )}
 
       {/* ── Header ── */}
       <div className="page-header">
         <div>
           <h2 className="page-title">Network Topology</h2>
-          <p className="page-subtitle">
-            Interactive network diagram — drag nodes, scroll to zoom
-          </p>
+          <p className="page-subtitle">Interactive network diagram — drag nodes, scroll to zoom</p>
         </div>
 
         <div className="topology-page__header-actions">
           <select
             className="topology-page__run-select"
             value={runId || ''}
-            onChange={(e) =>
-              setRunId(e.target.value ? Number(e.target.value) : null)
-            }
+            onChange={(e) => setRunId(e.target.value ? Number(e.target.value) : null)}
           >
             <option value="">Latest run</option>
             {runs.map((r) => (
@@ -800,12 +773,7 @@ const TopologyPage = () => {
             ))}
           </select>
 
-          <Button
-            variant="secondary"
-            icon={RefreshCw}
-            size="md"
-            onClick={() => fetchTopology(runId)}
-          >
+          <Button variant="secondary" icon={RefreshCw} size="md" onClick={() => fetchTopology(runId)}>
             Refresh
           </Button>
         </div>
@@ -833,9 +801,7 @@ const TopologyPage = () => {
         <div className="topology-page__stat-sep" />
         <div className="topology-page__stat">
           <GitBranch size={15} />
-          <span className="topology-page__stat-val">
-            {stats.switches + stats.rpis + stats.hgws}
-          </span>
+          <span className="topology-page__stat-val">{stats.switches + stats.rpis + stats.hgws}</span>
           <span className="topology-page__stat-label">Total Nodes</span>
         </div>
       </div>
@@ -845,9 +811,7 @@ const TopologyPage = () => {
         {isFullAccess && (
           <div className="topology-page__view-toggle">
             <button
-              className={`topology-page__view-btn ${
-                viewMode === VIEW_ALL ? 'topology-page__view-btn--active' : ''
-              }`}
+              className={`topology-page__view-btn ${viewMode === VIEW_ALL ? 'topology-page__view-btn--active' : ''}`}
               onClick={() => handleViewMode(VIEW_ALL)}
               type="button"
             >
@@ -855,11 +819,7 @@ const TopologyPage = () => {
               All
             </button>
             <button
-              className={`topology-page__view-btn ${
-                viewMode === VIEW_SWITCH
-                  ? 'topology-page__view-btn--active'
-                  : ''
-              }`}
+              className={`topology-page__view-btn ${viewMode === VIEW_SWITCH ? 'topology-page__view-btn--active' : ''}`}
               onClick={() => handleViewMode(VIEW_SWITCH)}
               type="button"
             >
@@ -867,9 +827,7 @@ const TopologyPage = () => {
               By Switch
             </button>
             <button
-              className={`topology-page__view-btn ${
-                viewMode === VIEW_HGW ? 'topology-page__view-btn--active' : ''
-              }`}
+              className={`topology-page__view-btn ${viewMode === VIEW_HGW ? 'topology-page__view-btn--active' : ''}`}
               onClick={() => handleViewMode(VIEW_HGW)}
               type="button"
             >
@@ -903,9 +861,7 @@ const TopologyPage = () => {
           <div className="topology-page__filter-group">
             <Filter size={13} className="topology-page__filter-icon" />
             {hgwsLoading ? (
-              <span className="topology-page__filter-loading">
-                Loading gateways…
-              </span>
+              <span className="topology-page__filter-loading">Loading gateways…</span>
             ) : (
               <select
                 className="topology-page__filter-select"
@@ -915,9 +871,7 @@ const TopologyPage = () => {
                 {!isFullAccess && availableHgws.length === 0 && (
                   <option value="">No gateways assigned</option>
                 )}
-                {isFullAccess && (
-                  <option value="">— Select a gateway —</option>
-                )}
+                {isFullAccess && <option value="">— Select a gateway —</option>}
                 {availableHgws.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
@@ -936,8 +890,7 @@ const TopologyPage = () => {
                 <Network size={11} /> Switch: {topology.filter.switch_ip}
               </>
             )}
-            {(topology.filter.type === 'hgw' ||
-              topology.filter.type === 'user_hgw') && (
+            {(topology.filter.type === 'hgw' || topology.filter.type === 'user_hgw') && (
               <>
                 <Wifi size={11} /> Gateway filter active
               </>
@@ -947,11 +900,7 @@ const TopologyPage = () => {
       </div>
 
       {/* ── Main canvas ── */}
-      <div
-        className={`topology-page__canvas-wrap ${
-          expanded ? 'topology-page__canvas-wrap--expanded' : ''
-        }`}
-      >
+      <div className={`topology-page__canvas-wrap ${expanded ? 'topology-page__canvas-wrap--expanded' : ''}`}>
         {/* Expand */}
         <div className="topology-page__expand-controls">
           <button
@@ -966,28 +915,13 @@ const TopologyPage = () => {
 
         {/* Zoom */}
         <div className="topology-page__zoom-controls">
-          <button
-            className="topology-page__zoom-btn"
-            onClick={handleZoomIn}
-            title="Zoom in"
-            type="button"
-          >
+          <button className="topology-page__zoom-btn" onClick={handleZoomIn} title="Zoom in" type="button">
             <ZoomIn size={16} />
           </button>
-          <button
-            className="topology-page__zoom-btn"
-            onClick={handleZoomOut}
-            title="Zoom out"
-            type="button"
-          >
+          <button className="topology-page__zoom-btn" onClick={handleZoomOut} title="Zoom out" type="button">
             <ZoomOut size={16} />
           </button>
-          <button
-            className="topology-page__zoom-btn"
-            onClick={handleFit}
-            title="Reset view"
-            type="button"
-          >
+          <button className="topology-page__zoom-btn" onClick={handleFit} title="Reset view" type="button">
             <Maximize2 size={16} />
           </button>
         </div>
@@ -1001,19 +935,13 @@ const TopologyPage = () => {
             { type: 'hgw', label: 'Gateway', color: NODE_COLORS.hgw.fill },
           ].map((item) => (
             <div key={item.type} className="topology-page__legend-item">
-              <span
-                className="topology-page__legend-dot"
-                style={{ background: item.color }}
-              />
+              <span className="topology-page__legend-dot" style={{ background: item.color }} />
               <span>{item.label}</span>
             </div>
           ))}
           <div className="topology-page__legend-divider" />
           <div className="topology-page__legend-item">
-            <span
-              className="topology-page__legend-dot"
-              style={{ background: FAILED_COLOR }}
-            />
+            <span className="topology-page__legend-dot" style={{ background: FAILED_COLOR }} />
             <span>Device Failed</span>
           </div>
           <div className="topology-page__legend-divider" />
@@ -1055,9 +983,7 @@ const TopologyPage = () => {
                 style={{
                   background: NODE_COLORS[selectedNode.type]?.light,
                   border: `1px solid ${NODE_COLORS[selectedNode.type]?.border}`,
-                  color: isFailedNode(selectedNode)
-                    ? FAILED_COLOR
-                    : NODE_COLORS[selectedNode.type]?.fill,
+                  color: isFailedNode(selectedNode) ? FAILED_COLOR : NODE_COLORS[selectedNode.type]?.fill,
                 }}
               >
                 {selectedNode.type === 'switch' && <Network size={16} />}
@@ -1065,18 +991,10 @@ const TopologyPage = () => {
                 {selectedNode.type === 'hgw' && <Wifi size={16} />}
               </div>
               <div>
-                <div className="topology-page__detail-type">
-                  {selectedNode.type.toUpperCase()}
-                </div>
-                <div className="topology-page__detail-ip mono">
-                  {selectedNode.ip}
-                </div>
+                <div className="topology-page__detail-type">{selectedNode.type.toUpperCase()}</div>
+                <div className="topology-page__detail-ip mono">{selectedNode.ip}</div>
               </div>
-              <button
-                className="topology-page__detail-close"
-                onClick={() => setSelectedNode(null)}
-                type="button"
-              >
+              <button className="topology-page__detail-close" onClick={() => setSelectedNode(null)} type="button">
                 ×
               </button>
             </div>
@@ -1098,16 +1016,12 @@ const TopologyPage = () => {
                   </div>
                   <div className="topology-page__detail-row">
                     <span>MAC</span>
-                    <span className="mono">
-                      {selectedNode.data?.mac_address || '—'}
-                    </span>
+                    <span className="mono">{selectedNode.data?.mac_address || '—'}</span>
                   </div>
                   <div className="topology-page__detail-row">
                     <span>Firmware</span>
                     <span>
-                      {selectedNode.data?.firmware_version ||
-                        selectedNode.data?.firmware ||
-                        '—'}
+                      {selectedNode.data?.firmware_version || selectedNode.data?.firmware || '—'}
                     </span>
                   </div>
                   <div className="topology-page__detail-row">
@@ -1118,9 +1032,7 @@ const TopologyPage = () => {
                     <span>Status</span>
                     <span
                       style={{
-                        color: isFailedNode(selectedNode)
-                          ? FAILED_COLOR
-                          : 'var(--success-dark)',
+                        color: isFailedNode(selectedNode) ? FAILED_COLOR : 'var(--success-dark)',
                         fontWeight: 600,
                       }}
                     >
@@ -1141,33 +1053,27 @@ const TopologyPage = () => {
                 <>
                   <div className="topology-page__detail-row">
                     <span>MAC</span>
-                    <span className="mono">
-                      {selectedNode.data?.mac || '—'}
-                    </span>
+                    <span className="mono">{selectedNode.data?.mac || '—'}</span>
                   </div>
                   <div className="topology-page__detail-row">
                     <span>SSH</span>
                     <span
                       style={{
                         color:
-                          (selectedNode.data?.ssh_success ??
-                            selectedNode.data?.last_ssh_success) === false
+                          (selectedNode.data?.ssh_success ?? selectedNode.data?.last_ssh_success) === false
                             ? FAILED_COLOR
                             : 'var(--success-dark)',
                         fontWeight: 600,
                       }}
                     >
-                      {(selectedNode.data?.ssh_success ??
-                        selectedNode.data?.last_ssh_success) === false
+                      {(selectedNode.data?.ssh_success ?? selectedNode.data?.last_ssh_success) === false
                         ? 'Failed'
                         : 'Success'}
                     </span>
                   </div>
                   <div className="topology-page__detail-row">
                     <span>Switch</span>
-                    <span className="mono">
-                      {selectedNode.data?.switch_ip || '—'}
-                    </span>
+                    <span className="mono">{selectedNode.data?.switch_ip || '—'}</span>
                   </div>
                   <div className="topology-page__detail-row">
                     <span>Port</span>
@@ -1185,14 +1091,10 @@ const TopologyPage = () => {
                       <span>{selectedNode.data.temp_celsius}°C</span>
                     </div>
                   )}
-                  {(selectedNode.data?.ssh_error ||
-                    selectedNode.data?.last_ssh_error) && (
+                  {(selectedNode.data?.ssh_error || selectedNode.data?.last_ssh_error) && (
                     <div className="topology-page__detail-row">
                       <span>Error</span>
-                      <span>
-                        {selectedNode.data?.ssh_error ||
-                          selectedNode.data?.last_ssh_error}
-                      </span>
+                      <span>{selectedNode.data?.ssh_error || selectedNode.data?.last_ssh_error}</span>
                     </div>
                   )}
                 </>
@@ -1211,15 +1113,11 @@ const TopologyPage = () => {
                   </div>
                   <div className="topology-page__detail-row">
                     <span>Serial</span>
-                    <span className="mono">
-                      {selectedNode.data?.serial_number || '—'}
-                    </span>
+                    <span className="mono">{selectedNode.data?.serial_number || '—'}</span>
                   </div>
                   <div className="topology-page__detail-row">
                     <span>Instance Key</span>
-                    <span className="mono">
-                      {selectedNode.data?.instance_key || '—'}
-                    </span>
+                    <span className="mono">{selectedNode.data?.instance_key || '—'}</span>
                   </div>
                   <div className="topology-page__detail-row">
                     <span>Via RPis</span>
@@ -1231,23 +1129,17 @@ const TopologyPage = () => {
                   </div>
                   <div className="topology-page__detail-row">
                     <span>Ext IP</span>
-                    <span className="mono">
-                      {selectedNode.data?.external_ip || '—'}
-                    </span>
+                    <span className="mono">{selectedNode.data?.external_ip || '—'}</span>
                   </div>
                   <div className="topology-page__detail-row">
                     <span>Network</span>
-                    <span className="mono">
-                      {selectedNode.data?.network || '—'}
-                    </span>
+                    <span className="mono">{selectedNode.data?.network || '—'}</span>
                   </div>
                   <div className="topology-page__detail-row">
                     <span>Status</span>
                     <span
                       style={{
-                        color: isFailedNode(selectedNode)
-                          ? FAILED_COLOR
-                          : 'var(--success-dark)',
+                        color: isFailedNode(selectedNode) ? FAILED_COLOR : 'var(--success-dark)',
                         fontWeight: 600,
                       }}
                     >
@@ -1266,9 +1158,7 @@ const TopologyPage = () => {
               {selectedNode.data?.last_seen && (
                 <div className="topology-page__detail-row">
                   <span>Last Seen</span>
-                  <span>
-                    {dayjs(selectedNode.data.last_seen).format('MMM D, HH:mm')}
-                  </span>
+                  <span>{dayjs(selectedNode.data.last_seen).format('MMM D, HH:mm')}</span>
                 </div>
               )}
             </div>

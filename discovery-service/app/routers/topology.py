@@ -1,5 +1,3 @@
-# app/api/topology_router.py
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -14,17 +12,12 @@ router = APIRouter(prefix="/api/v1/topology", tags=["Topology"])
 FULL_ACCESS_ROLES = {UserRole.SUPER_ADMIN.value, UserRole.ADMIN.value}
 
 
-# ── Factory ──────────────────────────────────────────────────────────────────
-
 def get_topology_service(
     db: Session = Depends(get_db),
     user_client: UserServiceClient = Depends(get_user_client),
 ) -> TopologyService:
-    """Crée le TopologyService avec ses deux dépendances injectées."""
     return TopologyService(db=db, user_client=user_client)
 
-
-# ── Routes ───────────────────────────────────────────────────────────────────
 
 @router.get("")
 def get_latest_topology(
@@ -35,7 +28,12 @@ def get_latest_topology(
     if not run_id:
         raise HTTPException(status_code=404, detail="No discovery run found.")
 
-    if current_user["role"] in FULL_ACCESS_ROLES:
+    has_full_access = (
+        current_user["role"] in FULL_ACCESS_ROLES
+        or service.user_has_all_hgws(current_user["username"])
+    )
+
+    if has_full_access:
         return service.get_topology_for_run(run_id)
     return service.get_topology_for_user(run_id, current_user["username"])
 
@@ -50,7 +48,12 @@ def get_topology_for_run(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found.")
 
-    if current_user["role"] in FULL_ACCESS_ROLES:
+    has_full_access = (
+        current_user["role"] in FULL_ACCESS_ROLES
+        or service.user_has_all_hgws(current_user["username"])
+    )
+
+    if has_full_access:
         return service.get_topology_for_run(run_id)
     return service.get_topology_for_user(run_id, current_user["username"])
 
@@ -62,11 +65,17 @@ def get_topology_for_switch(
     service: TopologyService = Depends(get_topology_service),
     current_user: dict = Depends(require_read_access),
 ):
-    if current_user["role"] not in FULL_ACCESS_ROLES:
+    has_full_access = (
+        current_user["role"] in FULL_ACCESS_ROLES
+        or service.user_has_all_hgws(current_user["username"])
+    )
+
+    if not has_full_access:
         raise HTTPException(
             status_code=403,
-            detail="Switch-level filtering requires ADMIN or SUPER_ADMIN role.",
+            detail="Switch-level filtering requires ADMIN/SUPER_ADMIN or ALL assignment.",
         )
+
     run = service.discovery_repo.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found.")
@@ -84,8 +93,12 @@ def get_topology_for_hgw(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found.")
 
-    # Access control: on garde la logique actuelle (identifiers = serial ou IP)
-    if current_user["role"] not in FULL_ACCESS_ROLES:
+    has_full_access = (
+        current_user["role"] in FULL_ACCESS_ROLES
+        or service.user_has_all_hgws(current_user["username"])
+    )
+
+    if not has_full_access:
         allowed = service.get_user_hgw_identifiers(current_user["username"])
         if hgw_identifier not in allowed:
             raise HTTPException(
@@ -106,7 +119,7 @@ def get_my_hgws(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found.")
 
-    # ADMIN/SUPER_ADMIN: retourne une liste unique d'HGW
+    # ✅ ADMIN/SUPER_ADMIN: retourne une liste unique de TOUTES les HGWs
     if current_user["role"] in FULL_ACCESS_ROLES:
         full = service.get_topology_for_run(run_id)
 
@@ -118,30 +131,29 @@ def get_my_hgws(
                     continue
 
                 serial = hgw.get("serial_number")
-                inst   = hgw.get("instance_key")
-                ip     = hgw.get("ip")
+                inst = hgw.get("instance_key")
+                ip = hgw.get("ip")
 
-                # NEW: ne plus dédupliquer par IP seule
                 dedup_key = serial or inst or ip
                 if not dedup_key or dedup_key in seen:
                     continue
 
                 seen[dedup_key] = {
-                    # ⚠️ compat: endpoint /hgw/{hgw_identifier} attend serial ou ip
                     "hgw_identifier": serial or ip,
-
-                    "ip":            ip,
+                    "ip": ip,
                     "serial_number": serial,
-                    "instance_key":  inst,   # NEW: permet de distinguer les HGW qui partagent la même IP
-
-                    "model_name":    hgw.get("model_name"),
-                    "manufacturer":  hgw.get("manufacturer"),
-                    "external_ip":   hgw.get("external_ip"),
-                    "ssh_success":   hgw.get("ssh_success"),
-                    "network":       hgw.get("network"),
+                    "instance_key": inst,
+                    "model_name": hgw.get("model_name"),
+                    "manufacturer": hgw.get("manufacturer"),
+                    "external_ip": hgw.get("external_ip"),
+                    "ssh_success": hgw.get("ssh_success"),
+                    "network": hgw.get("network"),
                 }
 
         return list(seen.values())
 
-    # USER: laisse TopologyService filtrer par assignments
+    # ✅ USER/PROJECT_MANAGER:
+    # - if ALL only => service returns ALL HGWs
+    # - if ALL + list => service returns only assigned HGWs (list)
+    # - if list only => service returns assigned list
     return service.get_my_hgws(run_id, current_user["username"])

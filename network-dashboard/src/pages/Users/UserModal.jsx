@@ -17,6 +17,8 @@ const ROLE_LABELS = {
   USER: 'User',
 }
 
+const ALL_HGW_IDENTIFIER = 'ALL'
+
 const DEFAULT_FORM = {
   username: '',
   email: '',
@@ -24,7 +26,7 @@ const DEFAULT_FORM = {
   password: '',
   role: 'USER',
   is_active: true,
-  project_hgws: [], // 0..n identifiers
+  project_hgws: [],
 }
 
 const Field = ({ label, error, required, children, hint }) => (
@@ -52,8 +54,6 @@ const UserModal = ({
   mode = 'create',
   initial,
   currentUserRole = 'ADMIN',
-
-  // passed from UsersPage (best practice: load once)
   hgwOptions = [],
   hgwsLoading = false,
 }) => {
@@ -62,8 +62,6 @@ const UserModal = ({
   const [apiError, setApiError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPass, setShowPass] = useState(false)
-
-  // ✅ NEW: filter/search for HGWs list
   const [hgwSearch, setHgwSearch] = useState('')
 
   const availableRoles = ROLES_FOR[currentUserRole] || ROLES_FOR.ADMIN
@@ -83,7 +81,9 @@ const UserModal = ({
         password: '',
         role: initial.role || 'USER',
         is_active: initial.is_active ?? true,
-        project_hgws: Array.isArray(initial.project_hgws) ? initial.project_hgws : [],
+        project_hgws: Array.isArray(initial.project_hgws)
+          ? initial.project_hgws
+          : [],
       })
     } else {
       setForm(DEFAULT_FORM)
@@ -101,42 +101,70 @@ const UserModal = ({
 
     if (mode === 'create') {
       if (!form.username.trim()) errs.username = 'Username is required.'
-      else if (form.username.trim().length < 3) errs.username = 'Minimum 3 characters.'
-      else if (form.username.trim().length > 32) errs.username = 'Maximum 32 characters.'
+      else if (form.username.trim().length < 3)
+        errs.username = 'Minimum 3 characters.'
+      else if (form.username.trim().length > 32)
+        errs.username = 'Maximum 32 characters.'
 
       if (!form.password) errs.password = 'Password is required.'
       else if (form.password.length < 8) errs.password = 'Minimum 8 characters.'
-      else if (!/[a-z]/.test(form.password)) errs.password = 'Must contain a lowercase letter.'
-      else if (!/[A-Z]/.test(form.password)) errs.password = 'Must contain an uppercase letter.'
-      else if (!/\d/.test(form.password)) errs.password = 'Must contain a digit.'
-      else if (!/[^a-zA-Z0-9]/.test(form.password)) errs.password = 'Must contain a special character.'
+      else if (!/[a-z]/.test(form.password))
+        errs.password = 'Must contain a lowercase letter.'
+      else if (!/[A-Z]/.test(form.password))
+        errs.password = 'Must contain an uppercase letter.'
+      else if (!/\d/.test(form.password))
+        errs.password = 'Must contain a digit.'
+      else if (!/[^a-zA-Z0-9]/.test(form.password))
+        errs.password = 'Must contain a special character.'
     } else if (form.password) {
       if (form.password.length < 8) errs.password = 'Minimum 8 characters.'
-      else if (!/[a-z]/.test(form.password)) errs.password = 'Must contain a lowercase letter.'
-      else if (!/[A-Z]/.test(form.password)) errs.password = 'Must contain an uppercase letter.'
-      else if (!/\d/.test(form.password)) errs.password = 'Must contain a digit.'
-      else if (!/[^a-zA-Z0-9]/.test(form.password)) errs.password = 'Must contain a special character.'
+      else if (!/[a-z]/.test(form.password))
+        errs.password = 'Must contain a lowercase letter.'
+      else if (!/[A-Z]/.test(form.password))
+        errs.password = 'Must contain an uppercase letter.'
+      else if (!/\d/.test(form.password))
+        errs.password = 'Must contain a digit.'
+      else if (!/[^a-zA-Z0-9]/.test(form.password))
+        errs.password = 'Must contain a special character.'
     }
 
     if (!form.email.trim()) errs.email = 'Email is required.'
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = 'Enter a valid email address.'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
+      errs.email = 'Enter a valid email address.'
 
     if (!form.full_name.trim()) errs.full_name = 'Full name is required.'
-    else if (form.full_name.trim().length < 2) errs.full_name = 'Minimum 2 characters.'
+    else if (form.full_name.trim().length < 2)
+      errs.full_name = 'Minimum 2 characters.'
 
     return errs
   }
 
-  const selectedSet = useMemo(() => new Set(form.project_hgws || []), [form.project_hgws])
+  const selectedSet = useMemo(
+    () => new Set(form.project_hgws || []),
+    [form.project_hgws]
+  )
+  const allSelected = selectedSet.has(ALL_HGW_IDENTIFIER)
 
   const filteredHgws = useMemo(() => {
     const q = hgwSearch.trim().toLowerCase()
     if (!q) return hgwOptions
     return hgwOptions.filter((o) => {
-      const hay = `${o.label || ''} ${o.ip || ''} ${o.model_name || ''} ${o.serial_number || ''}`.toLowerCase()
+      const hay = `${o.label || ''} ${o.ip || ''} ${o.model_name || ''} ${
+        o.serial_number || ''
+      }`.toLowerCase()
       return hay.includes(q)
     })
   }, [hgwOptions, hgwSearch])
+
+  const toggleAll = () => {
+    set('project_hgws', (() => {
+      const prev = form.project_hgws || []
+      const s = new Set(prev)
+      if (s.has(ALL_HGW_IDENTIFIER)) s.delete(ALL_HGW_IDENTIFIER)
+      else s.add(ALL_HGW_IDENTIFIER)
+      return Array.from(s)
+    })())
+  }
 
   const toggleHgw = (identifier) => {
     set('project_hgws', (() => {
@@ -179,13 +207,18 @@ const UserModal = ({
       } else {
         const payload = {}
 
-        if (form.email !== initial.email) payload.email = form.email.trim().toLowerCase()
-        if (form.full_name !== initial.full_name) payload.full_name = form.full_name.trim()
+        if (form.email !== initial.email)
+          payload.email = form.email.trim().toLowerCase()
+        if (form.full_name !== initial.full_name)
+          payload.full_name = form.full_name.trim()
         if (form.role !== initial.role) payload.role = form.role
-        if (form.is_active !== initial.is_active) payload.is_active = form.is_active
+        if (form.is_active !== initial.is_active)
+          payload.is_active = form.is_active
         if (form.password) payload.password = form.password
 
-        const initialList = Array.isArray(initial.project_hgws) ? initial.project_hgws : []
+        const initialList = Array.isArray(initial.project_hgws)
+          ? initial.project_hgws
+          : []
         if (!sameSet(form.project_hgws || [], initialList)) {
           payload.project_hgws = form.project_hgws || []
         }
@@ -200,13 +233,23 @@ const UserModal = ({
 
       onSuccess()
     } catch (err) {
-      setApiError(err.response?.data?.detail || 'An error occurred. Please try again.')
+      setApiError(
+        err.response?.data?.detail || 'An error occurred. Please try again.'
+      )
     } finally {
       setLoading(false)
     }
   }
 
-  const title = mode === 'create' ? 'Create New User' : `Edit User — ${initial?.username}`
+  const title =
+    mode === 'create'
+      ? 'Create New User'
+      : `Edit User — ${initial?.username}`
+
+  const selectedCount = (form.project_hgws || []).length
+  const hint = allSelected
+    ? `Selected: ${selectedCount} (includes ALL → full topology access)`
+    : `Selected: ${selectedCount}`
 
   return (
     <Modal
@@ -235,9 +278,16 @@ const UserModal = ({
 
         <div className="user-modal__grid">
           {mode === 'create' && (
-            <Field label="Username" required error={errors.username} hint="3–32 characters">
+            <Field
+              label="Username"
+              required
+              error={errors.username}
+              hint="3–32 characters"
+            >
               <input
-                className={`user-modal__input ${errors.username ? 'user-modal__input--error' : ''}`}
+                className={`user-modal__input ${
+                  errors.username ? 'user-modal__input--error' : ''
+                }`}
                 value={form.username}
                 onChange={(e) => set('username', e.target.value)}
                 placeholder="e.g. john.doe"
@@ -248,7 +298,9 @@ const UserModal = ({
 
           <Field label="Full Name" required error={errors.full_name}>
             <input
-              className={`user-modal__input ${errors.full_name ? 'user-modal__input--error' : ''}`}
+              className={`user-modal__input ${
+                errors.full_name ? 'user-modal__input--error' : ''
+              }`}
               value={form.full_name}
               onChange={(e) => set('full_name', e.target.value)}
               placeholder="e.g. John Doe"
@@ -257,7 +309,9 @@ const UserModal = ({
 
           <Field label="Email" required error={errors.email}>
             <input
-              className={`user-modal__input ${errors.email ? 'user-modal__input--error' : ''}`}
+              className={`user-modal__input ${
+                errors.email ? 'user-modal__input--error' : ''
+              }`}
               type="email"
               value={form.email}
               onChange={(e) => set('email', e.target.value)}
@@ -267,14 +321,24 @@ const UserModal = ({
           </Field>
 
           <Field
-            label={mode === 'edit' ? 'New Password (leave blank to keep)' : 'Password'}
+            label={
+              mode === 'edit'
+                ? 'New Password (leave blank to keep)'
+                : 'Password'
+            }
             required={mode === 'create'}
             error={errors.password}
-            hint={mode === 'create' ? 'Min 8 chars, upper + lower + digit + special' : undefined}
+            hint={
+              mode === 'create'
+                ? 'Min 8 chars, upper + lower + digit + special'
+                : undefined
+            }
           >
             <div className="user-modal__input-wrap">
               <input
-                className={`user-modal__input user-modal__input--password ${errors.password ? 'user-modal__input--error' : ''}`}
+                className={`user-modal__input user-modal__input--password ${
+                  errors.password ? 'user-modal__input--error' : ''
+                }`}
                 type={showPass ? 'text' : 'password'}
                 value={form.password}
                 onChange={(e) => set('password', e.target.value)}
@@ -306,15 +370,28 @@ const UserModal = ({
               ))}
             </select>
             {mode === 'edit' && currentUserRole !== 'SUPER_ADMIN' && (
-              <span className="user-modal__hint">Only Super Admins can change roles.</span>
+              <span className="user-modal__hint">
+                Only Super Admins can change roles.
+              </span>
             )}
           </Field>
 
-          {/* ✅ NEW HGW selection UI */}
-          <Field
-            label="Projects (HomeGateways)"
-            hint={hgwsLoading ? 'Loading HGWs...' : `Selected: ${form.project_hgws?.length || 0}`}
-          >
+          <Field label="Projects (HomeGateways)" hint={hgwsLoading ? 'Loading HGWs...' : hint}>
+            <label className="user-modal__hgw-row" style={{ marginBottom: 8 }}>
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                disabled={hgwsLoading}
+              />
+              <div className="user-modal__hgw-row-text">
+                <div className="user-modal__hgw-name">All gateways</div>
+                <div className="user-modal__hgw-meta">
+                  If checked, user can view full topology
+                </div>
+              </div>
+            </label>
+
             <input
               className="user-modal__input"
               value={hgwSearch}
@@ -327,7 +404,12 @@ const UserModal = ({
               <Button variant="secondary" size="sm" onClick={clearHgws} disabled={hgwsLoading}>
                 Clear
               </Button>
-              <Button variant="secondary" size="sm" onClick={selectFiltered} disabled={hgwsLoading || filteredHgws.length === 0}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={selectFiltered}
+                disabled={hgwsLoading || filteredHgws.length === 0}
+              >
                 Select filtered
               </Button>
             </div>
@@ -353,7 +435,10 @@ const UserModal = ({
                         <div className="user-modal__hgw-meta">
                           <span className="user-modal__hgw-ip">{o.ip}</span>
                           {o.serial_number && (
-                            <span className="user-modal__hgw-serial"> — {o.serial_number}</span>
+                            <span className="user-modal__hgw-serial">
+                              {' '}
+                              — {o.serial_number}
+                            </span>
                           )}
                         </div>
                       </div>
