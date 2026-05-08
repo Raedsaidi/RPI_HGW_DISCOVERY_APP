@@ -264,3 +264,10 @@
   color: var(--primary-6);
   box-shadow: var(--shadow-card);
 }
+.rpi-table__action-btn--reboot {
+  color: var(--color-warning, #f59e0b);
+}
+.rpi-table__action-btn--reboot:hover:not(:disabled) {
+  color: var(--color-warning-dark, #d97706);
+  background: rgba(245, 158, 11, 0.08);
+}

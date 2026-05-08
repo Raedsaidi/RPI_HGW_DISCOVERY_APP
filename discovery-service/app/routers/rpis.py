@@ -11,6 +11,7 @@ from app.core.db import get_db
 from app.core.security import require_read_access, require_write_access
 from app.repositories.rpi_repo import RpiRepository
 from app.schemas.rpi import RpiRead, RpiCredentialSubmit, RpiFactRead
+from app.services.rpi_reboot_service import RpiRebootService  
 from app.models.rpi import Rpi, RpiFact
 
 router = APIRouter(prefix="/api/v1/rpis", tags=["RPis"])
@@ -336,3 +337,33 @@ async def rpi_terminal_ws(websocket: WebSocket, session_id: str):
             sess.remove_client(websocket)
         except Exception:
             pass
+
+
+
+    
+
+
+@router.post("/{ip_mgmt}/reboot")
+def reboot_rpi(
+    ip_mgmt: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_write_access),
+):
+    """
+    Hard-reboot a RPi by cycling its PoE port on the parent switch.
+
+    Steps performed:
+      1. Telnet to the switch (via bastion).
+      2. Shutdown interface + disable PoE  →  wait ~4 s.
+      3. No shutdown + re-enable PoE.
+      4. Poll TCP/22 on the RPi until it responds (up to 120 s).
+      5. Update last_seen / last_ssh_success in DB.
+    """
+    try:
+        return RpiRebootService(db).reboot_rpi(ip_mgmt)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConnectionError as e:
+        raise HTTPException(status_code=502, detail=f"Network error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"RPi reboot failed: {e}")

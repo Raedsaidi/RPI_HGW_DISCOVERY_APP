@@ -168,7 +168,7 @@
 
 /* ── Body ── */
 .rpi-card__body {
-  padding-left: 14px; /* offset for ssh dot */
+  padding-left: 14px;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -179,7 +179,18 @@
   font-size: 13px;
   font-weight: 700;
   color: var(--purple-main);
-  padding-right: 40px; /* avoid port badge overlap */
+  padding-right: 40px;
+}
+
+.rpi-card__ip--clickable {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color var(--transition-fast);
+}
+
+.rpi-card__ip--clickable:hover {
+  color: var(--primary-6);
 }
 
 .rpi-card__label {
@@ -205,8 +216,8 @@
   color: var(--neutral-6);
 }
 
-.rpi-card__meta-item--cyan  { color: var(--cyan-main); }
-.rpi-card__meta-item--time  { color: var(--neutral-5); font-family: var(--font-family); }
+.rpi-card__meta-item--cyan { color: var(--cyan-main); }
+.rpi-card__meta-item--time { color: var(--neutral-5); font-family: var(--font-family); }
 
 .rpi-card__badges {
   display: flex;
@@ -260,11 +271,26 @@
   transition: all var(--transition-fast);
 }
 
-.rpi-card__action--view      { color: var(--primary-6); }
+.rpi-card__action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.rpi-card__action--view           { color: var(--primary-6); }
 .rpi-card__action--view:hover     { background: var(--primary-1); }
-.rpi-card__action--cred      { color: var(--warning-main); }
+
+.rpi-card__action--cred           { color: var(--warning-main); }
 .rpi-card__action--cred:hover     { background: var(--warning-light); }
-.rpi-card__action--reconnect { color: var(--neutral-7); }
+
+.rpi-card__action--reconnect      { color: var(--neutral-7); }
 .rpi-card__action--reconnect:hover{ background: var(--neutral-3); }
-.rpi-card__action--delete    { color: var(--error-main); }
-.rpi-card__action--delete:hover   { background: var(--error-light); }
+
+/* Reboot — amber, cohérent avec RebootConfirmModal */
+.rpi-card__action--reboot         { color: #f59e0b; }
+.rpi-card__action--reboot:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+}
+
+.rpi-card__action--delete         { color: var(--error-main); }
+.rpi-card__action--delete:hover:not(:disabled) { background: var(--error-light); }

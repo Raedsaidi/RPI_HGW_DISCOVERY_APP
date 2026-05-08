@@ -10,6 +10,7 @@ import {
   Link2,
   Table2,
   LayoutList,
+  PowerOff,
 } from 'lucide-react'
 import Card from '@/components/common/Card'
 import Button from '@/components/common/Button'
@@ -22,6 +23,7 @@ import RpiDetailModal from './RpiDetailModal'
 import CredentialModal from './CredentialModal'
 import TerminalModal from '@/components/terminal/TerminalModal'
 import SwitchExpanderView from './SwitchExpanderView'
+import RebootConfirmModal from './RebootConfirmModal'
 import { rpisApi } from '@/api/endpoints'
 import { useNotification, NOTIFICATION_MESSAGES } from '@/context/NotificationContext'
 import { getFriendlyMessage } from '@/utils/messageHelper'
@@ -51,6 +53,12 @@ const RPisPage = () => {
   /* reconnect */
   const [reconnectingIp, setReconnectingIp] = useState(null)
 
+  /* reboot */
+  const [rebootingIp, setRebootingIp] = useState(null)
+
+  /* reboot confirm modal */
+  const [rebootTarget, setRebootTarget] = useState(null) // row | null
+
   /* modals */
   const [detailTarget, setDetailTarget] = useState(null)
   const [credTarget, setCredTarget] = useState(null)
@@ -67,7 +75,7 @@ const RPisPage = () => {
       if (filterCreds !== '') baseParams.has_custom_creds = filterCreds === 'true'
 
       if (viewMode === 'switch') {
-        const PAGE_SIZE_SWITCH = 100 // max backend
+        const PAGE_SIZE_SWITCH = 100
         let all = []
         let p = 1
         let total = 0
@@ -87,8 +95,8 @@ const RPisPage = () => {
 
         setData(all)
         setTotal(total)
-        setTotalPages(1) // pas utile en vue switch
-        setPage(1)       // optionnel
+        setTotalPages(1)
+        setPage(1)
       } else {
         const PAGE_SIZE = 25
         const res = await rpisApi.list({ ...baseParams, page, page_size: PAGE_SIZE })
@@ -107,8 +115,8 @@ const RPisPage = () => {
     fetchRpis()
   }, [fetchRpis])
 
-  const handleSearch = (val) => { setSearch(val); setPage(1) }
-  const handleSshFilter = (val) => { setFilterSsh(val); setPage(1) }
+  const handleSearch     = (val) => { setSearch(val);      setPage(1) }
+  const handleSshFilter  = (val) => { setFilterSsh(val);   setPage(1) }
   const handleCredsFilter = (val) => { setFilterCreds(val); setPage(1) }
 
   const handleDeleteCreds = async (ip) => {
@@ -117,8 +125,7 @@ const RPisPage = () => {
       notify('success', NOTIFICATION_MESSAGES.SUCCESS.DELETED)
       fetchRpis()
     } catch (e) {
-      const friendlyMessage = getFriendlyMessage('error', e.message || 'Delete credentials failed')
-      notify('error', friendlyMessage)
+      notify('error', getFriendlyMessage('error', e.message || 'Delete credentials failed'))
       console.error(e)
     }
   }
@@ -132,18 +139,49 @@ const RPisPage = () => {
 
     try {
       const res = await rpisApi.reconnect(ip)
-      const ok = res?.data?.success !== false
+      const ok  = res?.data?.success !== false
       const msg = res?.data?.message || (ok ? 'Reconnect succeeded' : 'Reconnect failed')
       notify(ok ? 'success' : 'error', msg)
       fetchRpis()
     } catch (e) {
-      const friendlyMessage = getFriendlyMessage('error', e.response?.data?.detail || e.message || 'Reconnect failed')
-      notify('error', friendlyMessage)
+      notify('error', getFriendlyMessage('error', e.response?.data?.detail || e.message || 'Reconnect failed'))
       console.error(e)
     } finally {
       setReconnectingIp(null)
     }
   }
+
+  /* ── Step 1 : open confirm modal ── */
+  const handleRebootRequest = (row) => {
+    setRebootTarget(row)
+  }
+
+  /* ── Step 2 : user confirmed → execute reboot ── */
+  const handleRebootConfirm = async () => {
+    const row = rebootTarget
+    setRebootTarget(null)           // close modal immediately
+
+    const ip = row?.ip_mgmt
+    if (!ip) return
+
+    setRebootingIp(ip)
+    notify('info', `Rebooting RPi ${ip} via PoE cycle...`)
+
+    try {
+      const res = await rpisApi.reboot(ip)
+      const ok  = res?.data?.success !== false
+      const msg = res?.data?.message || (ok ? 'Reboot succeeded' : 'Reboot failed')
+      notify(ok ? 'success' : 'error', msg)
+      fetchRpis()
+    } catch (e) {
+      notify('error', getFriendlyMessage('error', e.response?.data?.detail || e.message || 'Reboot failed'))
+      console.error(e)
+    } finally {
+      setRebootingIp(null)
+    }
+  }
+
+  const handleRebootCancel = () => setRebootTarget(null)
 
   const displayData = useMemo(() => {
     const arr = [...data]
@@ -164,7 +202,7 @@ const RPisPage = () => {
       title: 'IP Address',
       width: 140,
       render: (val, row) => {
-        const busy = reconnectingIp === row.ip_mgmt
+        const busy = reconnectingIp === row.ip_mgmt || rebootingIp === row.ip_mgmt
         return (
           <button
             type="button"
@@ -277,12 +315,16 @@ const RPisPage = () => {
     {
       key: 'actions',
       title: '',
-      width: 140,
+      width: 165,
       align: 'right',
       render: (_, row) => {
-        const busy = reconnectingIp === row.ip_mgmt
+        const reconnecting = reconnectingIp === row.ip_mgmt
+        const rebooting    = rebootingIp    === row.ip_mgmt
+        const busy         = reconnecting || rebooting
+
         return (
           <div className="rpi-table__actions">
+            {/* View details */}
             <button
               className="rpi-table__action-btn rpi-table__action-btn--view"
               title="View details"
@@ -292,6 +334,7 @@ const RPisPage = () => {
               <Eye size={15} />
             </button>
 
+            {/* Manage credentials */}
             <button
               className="rpi-table__action-btn rpi-table__action-btn--cred"
               title="Manage credentials"
@@ -301,19 +344,35 @@ const RPisPage = () => {
               <KeyRound size={15} />
             </button>
 
+            {/* Reconnect */}
             <button
               className="rpi-table__action-btn rpi-table__action-btn--reconnect"
-              title={busy ? 'Reconnecting...' : 'Reconnect'}
+              title={reconnecting ? 'Reconnecting...' : 'Reconnect'}
               onClick={() => handleReconnect(row)}
               disabled={busy}
             >
-              {busy ? (
+              {reconnecting ? (
                 <RefreshCw size={15} className="spin" />
               ) : (
                 <Link2 size={15} />
               )}
             </button>
 
+            {/* Reboot via PoE cycle */}
+            <button
+              className="rpi-table__action-btn rpi-table__action-btn--reboot"
+              title={rebooting ? 'Rebooting...' : 'Reboot via PoE cycle'}
+              onClick={() => handleRebootRequest(row)}
+              disabled={busy}
+            >
+              {rebooting ? (
+                <RefreshCw size={15} className="spin" />
+              ) : (
+                <PowerOff size={15} />
+              )}
+            </button>
+
+            {/* Delete custom credentials */}
             {row.has_custom_credentials && (
               <button
                 className="rpi-table__action-btn rpi-table__action-btn--delete"
@@ -330,8 +389,8 @@ const RPisPage = () => {
     },
   ]
 
-  const sshOk = data.filter((r) => r.last_ssh_success === true).length
-  const sshFail = data.filter((r) => r.last_ssh_success === false).length
+  const sshOk       = data.filter((r) => r.last_ssh_success === true).length
+  const sshFail     = data.filter((r) => r.last_ssh_success === false).length
   const customCreds = data.filter((r) => r.has_custom_credentials).length
 
   return (
@@ -346,7 +405,6 @@ const RPisPage = () => {
         </div>
 
         <div className="rpis-page__header-actions">
-          {/* View mode toggle */}
           <div className="rpis-page__view-toggle">
             <button
               className={`rpis-page__view-btn ${viewMode === 'table' ? 'rpis-page__view-btn--active' : ''}`}
@@ -434,7 +492,6 @@ const RPisPage = () => {
               </select>
             </div>
 
-            {/* Sort uniquement pertinent en vue tableau */}
             {viewMode === 'table' && (
               <div className="rpis-page__filter-group">
                 <label className="rpis-page__filter-label">Sort</label>
@@ -477,9 +534,11 @@ const RPisPage = () => {
           <SwitchExpanderView
             data={displayData}
             reconnectingIp={reconnectingIp}
+            rebootingIp={rebootingIp}
             onDetail={setDetailTarget}
             onCred={setCredTarget}
             onReconnect={handleReconnect}
+            onReboot={handleRebootRequest}
             onDeleteCreds={handleDeleteCreds}
             onTerminal={setTerminalTarget}
           />
@@ -515,6 +574,14 @@ const RPisPage = () => {
         apiClose={(sid) => rpisApi.terminalClose(sid)}
         wsPathForSession={(sid) => `/api/v1/rpis/terminal/${sid}/ws`}
         autoStart={true}
+      />
+
+      {/* ── Reboot confirm modal ── */}
+      <RebootConfirmModal
+        open={!!rebootTarget}
+        ip={rebootTarget?.ip_mgmt || ''}
+        onConfirm={handleRebootConfirm}
+        onCancel={handleRebootCancel}
       />
     </div>
   )

@@ -11,14 +11,28 @@ import {
   Trash2,
   Router,
   Cpu,
+  PowerOff,
 } from 'lucide-react'
 import { StatusBadge } from '@/components/common/Badge'
 import dayjs from 'dayjs'
 import './SwitchExpanderView.css'
 
-const RpiCard = ({ row, reconnectingIp, onDetail, onCred, onReconnect, onDeleteCreds }) => {
-  const busy = reconnectingIp === row.ip_mgmt
-  const sshOk = row.last_ssh_success === true
+const RpiCard = ({
+  row,
+  reconnectingIp,
+  rebootingIp,
+  onDetail,
+  onCred,
+  onReconnect,
+  onReboot,
+  onDeleteCreds,
+  onTerminal,
+}) => {
+  const reconnecting = reconnectingIp === row.ip_mgmt
+  const rebooting    = rebootingIp    === row.ip_mgmt
+  const busy         = reconnecting || rebooting
+
+  const sshOk   = row.last_ssh_success === true
   const sshFail = row.last_ssh_success === false
 
   return (
@@ -30,12 +44,24 @@ const RpiCard = ({ row, reconnectingIp, onDetail, onCred, onReconnect, onDeleteC
         </div>
       )}
 
-      {/* SSH status indicator */}
-      <div className={`rpi-card__ssh-dot ${sshOk ? 'rpi-card__ssh-dot--ok' : sshFail ? 'rpi-card__ssh-dot--fail' : 'rpi-card__ssh-dot--unknown'}`} />
+      {/* SSH status dot */}
+      <div
+        className={`rpi-card__ssh-dot ${
+          sshOk   ? 'rpi-card__ssh-dot--ok' :
+          sshFail ? 'rpi-card__ssh-dot--fail' :
+                    'rpi-card__ssh-dot--unknown'
+        }`}
+      />
 
       {/* Main info */}
       <div className="rpi-card__body">
-        <div className="rpi-card__ip">{row.ip_mgmt || '—'}</div>
+        <div
+          className="rpi-card__ip rpi-card__ip--clickable"
+          title="Open terminal"
+          onClick={() => !busy && onTerminal?.(row)}
+        >
+          {row.ip_mgmt || '—'}
+        </div>
 
         {row.label && (
           <div className="rpi-card__label">{row.label}</div>
@@ -76,6 +102,7 @@ const RpiCard = ({ row, reconnectingIp, onDetail, onCred, onReconnect, onDeleteC
 
       {/* Actions */}
       <div className="rpi-card__actions">
+        {/* View details */}
         <button
           className="rpi-card__action rpi-card__action--view"
           title="View details"
@@ -84,6 +111,8 @@ const RpiCard = ({ row, reconnectingIp, onDetail, onCred, onReconnect, onDeleteC
         >
           <Eye size={13} />
         </button>
+
+        {/* Manage credentials */}
         <button
           className="rpi-card__action rpi-card__action--cred"
           title="Manage credentials"
@@ -92,14 +121,34 @@ const RpiCard = ({ row, reconnectingIp, onDetail, onCred, onReconnect, onDeleteC
         >
           <KeyRound size={13} />
         </button>
+
+        {/* Reconnect */}
         <button
           className="rpi-card__action rpi-card__action--reconnect"
-          title={busy ? 'Reconnecting...' : 'Reconnect'}
+          title={reconnecting ? 'Reconnecting...' : 'Reconnect'}
           onClick={() => onReconnect(row)}
           disabled={busy}
         >
-          {busy ? <RefreshCw size={13} className="spin" /> : <Link2 size={13} />}
+          {reconnecting
+            ? <RefreshCw size={13} className="spin" />
+            : <Link2 size={13} />
+          }
         </button>
+
+        {/* Reboot via PoE cycle */}
+        <button
+          className="rpi-card__action rpi-card__action--reboot"
+          title={rebooting ? 'Rebooting...' : 'Reboot via PoE cycle'}
+          onClick={() => onReboot(row)}
+          disabled={busy}
+        >
+          {rebooting
+            ? <RefreshCw size={13} className="spin" />
+            : <PowerOff size={13} />
+          }
+        </button>
+
+        {/* Delete custom credentials */}
         {row.has_custom_credentials && (
           <button
             className="rpi-card__action rpi-card__action--delete"
@@ -115,10 +164,21 @@ const RpiCard = ({ row, reconnectingIp, onDetail, onCred, onReconnect, onDeleteC
   )
 }
 
-const SwitchGroup = ({ switchIp, rpis, reconnectingIp, onDetail, onCred, onReconnect, onDeleteCreds }) => {
+const SwitchGroup = ({
+  switchIp,
+  rpis,
+  reconnectingIp,
+  rebootingIp,
+  onDetail,
+  onCred,
+  onReconnect,
+  onReboot,
+  onDeleteCreds,
+  onTerminal,
+}) => {
   const [open, setOpen] = useState(true)
 
-  const sshOkCount = rpis.filter(r => r.last_ssh_success === true).length
+  const sshOkCount   = rpis.filter(r => r.last_ssh_success === true).length
   const sshFailCount = rpis.filter(r => r.last_ssh_success === false).length
 
   return (
@@ -164,10 +224,13 @@ const SwitchGroup = ({ switchIp, rpis, reconnectingIp, onDetail, onCred, onRecon
                 key={row.id || row.ip_mgmt}
                 row={row}
                 reconnectingIp={reconnectingIp}
+                rebootingIp={rebootingIp}
                 onDetail={onDetail}
                 onCred={onCred}
                 onReconnect={onReconnect}
+                onReboot={onReboot}
                 onDeleteCreds={onDeleteCreds}
+                onTerminal={onTerminal}
               />
             ))}
           </div>
@@ -180,10 +243,13 @@ const SwitchGroup = ({ switchIp, rpis, reconnectingIp, onDetail, onCred, onRecon
 const SwitchExpanderView = ({
   data,
   reconnectingIp,
+  rebootingIp,
   onDetail,
   onCred,
   onReconnect,
+  onReboot,
   onDeleteCreds,
+  onTerminal,
 }) => {
   const groups = useMemo(() => {
     const map = {}
@@ -193,7 +259,6 @@ const SwitchExpanderView = ({
       map[key].push(rpi)
     })
 
-    // Sort: named switches first, then no-switch
     return Object.entries(map).sort(([a], [b]) => {
       if (a === '__no_switch__') return 1
       if (b === '__no_switch__') return -1
@@ -209,10 +274,13 @@ const SwitchExpanderView = ({
           switchIp={switchIp === '__no_switch__' ? null : switchIp}
           rpis={rpis}
           reconnectingIp={reconnectingIp}
+          rebootingIp={rebootingIp}
           onDetail={onDetail}
           onCred={onCred}
           onReconnect={onReconnect}
+          onReboot={onReboot}
           onDeleteCreds={onDeleteCreds}
+          onTerminal={onTerminal}
         />
       ))}
     </div>

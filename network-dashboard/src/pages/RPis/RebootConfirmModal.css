@@ -1,0 +1,201 @@
+/* ── Overlay ─────────────────────────────────────────────────────────────── */
+.rcm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: rcm-fade-in 0.15s ease;
+}
+
+@keyframes rcm-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Dialog ──────────────────────────────────────────────────────────────── */
+.rcm-dialog {
+  position: relative;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  background: var(--card-bg);
+  border: 1px solid var(--neutral-5);
+  border-top: 2px solid var(--warning-main);
+  border-radius: var(--radius-lg);
+  padding: 32px 28px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow:
+    0 0 0 1px var(--neutral-4),
+    0 20px 60px rgba(0, 0, 0, 0.4),
+    var(--shadow-card);
+  animation: rcm-slide-up 0.18s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+@keyframes rcm-slide-up {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+/* ── Close button ────────────────────────────────────────────────────────── */
+.rcm-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--neutral-6);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.rcm-close:hover {
+  color: var(--neutral-9);
+  background: var(--neutral-3);
+}
+
+/* ── Icon ────────────────────────────────────────────────────────────────── */
+.rcm-icon-wrap {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.rcm-icon-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--warning-light);
+  border: 1.5px solid var(--warning-border);
+  animation: rcm-pulse 2s ease-in-out infinite;
+}
+
+@keyframes rcm-pulse {
+  0%, 100% { transform: scale(1);    opacity: 1;   }
+  50%       { transform: scale(1.08); opacity: 0.6; }
+}
+
+.rcm-icon {
+  color: var(--warning-main);
+}
+
+/* ── Title ───────────────────────────────────────────────────────────────── */
+.rcm-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--neutral-9);
+  letter-spacing: 0.01em;
+}
+
+/* ── Description ─────────────────────────────────────────────────────────── */
+.rcm-desc {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--neutral-7);
+}
+
+/* ── Target IP ───────────────────────────────────────────────────────────── */
+.rcm-target {
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--warning-main);
+  background: var(--warning-light);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  padding: 5px 14px;
+  letter-spacing: 0.03em;
+}
+
+/* ── Warning banner ──────────────────────────────────────────────────────── */
+.rcm-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  background: var(--error-light);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  font-size: 0.78rem;
+  color: var(--error-dark);
+  line-height: 1.45;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 2px;
+}
+
+.rcm-warning svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--error-main);
+}
+
+/* ── Actions ─────────────────────────────────────────────────────────────── */
+.rcm-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.rcm-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: var(--font-family);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform 0.1s;
+}
+
+.rcm-btn:active { transform: scale(0.97); }
+
+/* Cancel */
+.rcm-btn--cancel {
+  background: var(--neutral-2);
+  border-color: var(--neutral-5);
+  color: var(--neutral-7);
+}
+.rcm-btn--cancel:hover {
+  background: var(--neutral-3);
+  color: var(--neutral-9);
+}
+
+/* Confirm / Reboot */
+.rcm-btn--confirm {
+  background: var(--warning-main);
+  border-color: var(--warning-main);
+  color: var(--neutral-1);
+  font-weight: 600;
+  box-shadow: 0 2px 8px var(--warning-border);
+}
+.rcm-btn--confirm:hover {
+  background: var(--warning-dark);
+  border-color: var(--warning-dark);
+  box-shadow: 0 4px 14px var(--warning-border);
+}
+.rcm-btn--confirm:focus-visible {
+  outline: 2px solid var(--warning-main);
+  outline-offset: 2px;
+}

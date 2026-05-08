@@ -59,6 +59,7 @@ export const rpisApi = {
   terminalOpen: (ip) => discoveryClient.post(`/rpis/${ip}/terminal/open`),
   terminalList: (ip) => discoveryClient.get(`/rpis/${ip}/terminal/sessions`),
   terminalClose: (sessionId) => discoveryClient.post(`/rpis/terminal/${sessionId}/close`),
+  reboot: (ip) => discoveryClient.post(`/rpis/${ip}/reboot`),
 }
 
 export const hgwsApi = {
