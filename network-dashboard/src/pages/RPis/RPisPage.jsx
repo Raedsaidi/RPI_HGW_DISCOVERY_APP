@@ -151,24 +151,38 @@ const RPisPage = () => {
     }
   }
 
-  /* ── Step 1 : open confirm modal ── */
+  /* ── Step 1 : open confirm modal (with normalized port) ── */
   const handleRebootRequest = (row) => {
-    setRebootTarget(row)
+    // ✅ Normalisation du switch_port : retire "g", "Gi", espaces, etc. → "11"
+    const rawPort = row?.switch_port
+    const normalizedPort = rawPort
+      ? String(rawPort).trim().replace(/^g/i, '').replace(/[^0-9]/g, '')
+      : null
+
+    if (!normalizedPort) {
+      notify('error', `Cannot reboot: missing or invalid switch port for RPi ${row?.ip_mgmt || ''}`)
+      return
+    }
+
+    // On stocke la row + le port normalisé dans le state du modal
+    setRebootTarget({ ...row, _normalizedPort: normalizedPort })
   }
 
   /* ── Step 2 : user confirmed → execute reboot ── */
   const handleRebootConfirm = async () => {
     const row = rebootTarget
-    setRebootTarget(null)           // close modal immediately
+    setRebootTarget(null) // close modal immediately
 
     const ip = row?.ip_mgmt
-    if (!ip) return
+    const port = row?._normalizedPort // ✅ port normalisé
+    if (!ip || !port) return
 
     setRebootingIp(ip)
-    notify('info', `Rebooting RPi ${ip} via PoE cycle...`)
+    notify('info', `Rebooting RPi ${ip} via PoE cycle (port ${port})...`)
 
     try {
-      const res = await rpisApi.reboot(ip)
+      // ⬇️ On envoie au backend le port normalisé (ex: "11")
+      const res = await rpisApi.reboot(ip, { port })
       const ok  = res?.data?.success !== false
       const msg = res?.data?.message || (ok ? 'Reboot succeeded' : 'Reboot failed')
       notify(ok ? 'success' : 'error', msg)

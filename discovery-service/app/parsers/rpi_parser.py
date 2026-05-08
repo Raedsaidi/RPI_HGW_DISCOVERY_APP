@@ -1,3 +1,4 @@
+# app/parsers/rpi_parser.py
 import re
 import ipaddress
 import json
@@ -37,7 +38,7 @@ def _is_excluded_iface(name: str) -> bool:
 
 
 def _is_excluded_ip(ip: str) -> bool:
-    """Retourne True si l'IP est exclue (loopback, management, APIPA)."""
+    """Retourne True si l'IP est exclue (loopback, 172.*, APIPA)."""
     return any(ip.startswith(p) for p in EXCLUDED_PREFIXES)
 
 
@@ -116,10 +117,6 @@ def parse_ip_addr(text: str) -> tuple[Optional[str], Optional[str], Optional[str
     Priority order: eth0 > eth1 > wlan0 > first found
 
     Returns: (lan_iface, lan_ip, mac)
-
-    Example:
-        ("eth0", "192.168.1.62", "C4:41:1E:FE:8A:53")
-        ("eth0", "10.0.1.45",    "B8:27:EB:AA:BB:CC")
     """
     text = clean(text)
 
@@ -131,7 +128,6 @@ def parse_ip_addr(text: str) -> tuple[Optional[str], Optional[str], Optional[str
         line = line.strip()
 
         # ── Nouvelle interface ─────────────────────────────────────────────────
-        # Gère : "2: eth0: <...", "2: LAN: <...", "2: LAN@eth0: <..."
         iface_match = re.match(
             r"^\d+:\s+"
             r"([^:@\s]+)"
@@ -181,7 +177,6 @@ def parse_ip_addr(text: str) -> tuple[Optional[str], Optional[str], Optional[str
         logger.warning("[PARSER] ip a: No valid LAN interface found")
         return None, None, None
 
-    # Tri par priorité dynamique (eth0 > eth1 > wlan0 > autres)
     candidates.sort(key=lambda c: IFACE_PRIORITY.get(c[0], 99))
     iface, ip, mac = candidates[0]
 
@@ -195,12 +190,6 @@ def parse_ip_addr(text: str) -> tuple[Optional[str], Optional[str], Optional[str
 def parse_ip_route_dev(text: str) -> Optional[str]:
     """
     Parse output of 'ip r s dev <iface>' to extract the gateway IP.
-
-    Priority:
-        1. Line starting with "default via X.X.X.X"
-        2. Any line containing "via X.X.X.X"
-
-    Returns validated gateway IP or None.
     """
     text = clean(text)
 
@@ -208,42 +197,28 @@ def parse_ip_route_dev(text: str) -> Optional[str]:
         logger.debug("[PARSER] ip r s dev: output is empty")
         return None
 
-    logger.debug("[PARSER] ip r s dev output:\n%s", text)
-
-    # ── Priorité 1 : "default via X.X.X.X" ───────────────────────────────────
+    # 1) default via ...
     for line in text.splitlines():
         m = re.match(r"^default\s+via\s+(\d+\.\d+\.\d+\.\d+)", line.strip())
         if m:
             gw = m.group(1)
             if _is_valid_ip(gw):
-                logger.debug("[PARSER] HGW found (default via): %s", gw)
                 return gw
 
-    # ── Priorité 2 : n'importe quel "via X.X.X.X" ────────────────────────────
+    # 2) any via ...
     for line in text.splitlines():
         m = re.search(r"\bvia\s+(\d+\.\d+\.\d+\.\d+)", line.strip())
         if m:
             gw = m.group(1)
             if _is_valid_ip(gw):
-                logger.debug("[PARSER] HGW found (via): %s", gw)
                 return gw
 
-    logger.debug("[PARSER] No gateway found in ip r s dev output")
     return None
 
 
 def detect_hgw(ip_a_text: str, ip_route_text: str) -> dict:
     """
     Fonction de haut niveau combinant parse_ip_addr + parse_ip_route_dev.
-
-    Returns:
-        {
-            "interface": "eth0",
-            "local_ip":  "192.168.1.62",
-            "mac":       "C4:41:1E:FE:8A:53",
-            "gateway":   "192.168.1.1",
-        }
-        ou {} si aucune interface valide trouvée.
     """
     iface, ip, mac = parse_ip_addr(ip_a_text)
     if not iface:
@@ -287,26 +262,72 @@ def parse_ps_scripts(text: str) -> tuple[list[str], list[str]]:
     return list(set(scripts)), list(set(python_procs))
 
 
-# ── Parsers Docker ────────────────────────────────────────────────────────────
+# ── Parsers Docker (ROBUSTES) ─────────────────────────────────────────────────
+
+_DOCKER_ERR_PATTERNS = (
+    "permission denied",
+    "cannot connect to the docker daemon",
+    "is the docker daemon running",
+    "error during connect",
+)
 
 def parse_docker_ps(text: str) -> tuple[bool, list[dict]]:
     """
-    Parse 'docker ps -a' output.
-    Returns (docker_available, containers_list)
+    Robust parser for containers.
+
+    Works with:
+      - docker ps -a --format '{{json .}}'   (recommended)
+      - docker ps -a classic table output   (fallback)
+
+    Returns:
+      (docker_usable, containers_list)
+
+    docker_usable = False if docker missing OR daemon not reachable OR permission denied.
     """
     text = clean(text)
+    if not text:
+        return True, []
 
-    if "command not found" in text.lower() or "not found" in text.lower():
+    low = text.lower()
+
+    if "command not found" in low or "not found" in low:
         return False, []
 
-    containers = []
-    lines      = text.splitlines()
+    if any(p in low for p in _DOCKER_ERR_PATTERNS):
+        return False, []
 
+    containers: list[dict] = []
+
+    # 1) JSON-lines mode
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or not line.startswith("{"):
+            continue
+        try:
+            j = json.loads(line)
+        except Exception:
+            continue
+
+        containers.append({
+            "container_id": j.get("ID"),
+            "image":        j.get("Image"),
+            "command":      j.get("Command"),
+            "created":      j.get("RunningFor") or j.get("CreatedAt"),
+            "status":       j.get("Status"),
+            "name":         j.get("Names"),
+            "ports":        j.get("Ports"),
+        })
+
+    if containers:
+        return True, containers
+
+    # 2) Fallback table mode (best-effort)
+    lines = text.splitlines()
     if not lines:
         return True, []
 
-    header = lines[0]
-    if "CONTAINER" not in header.upper():
+    header = lines[0].upper()
+    if "CONTAINER" not in header:
         return True, []
 
     for line in lines[1:]:
@@ -314,20 +335,26 @@ def parse_docker_ps(text: str) -> tuple[bool, list[dict]]:
         if not line:
             continue
 
-        parts = line.split(None, 6)
-        if len(parts) < 7:
+        # split by 2+ spaces so "15 hours ago" and "Removal In Progress" stay intact
+        cols = re.split(r"\s{2,}", line)
+        if len(cols) < 6:
             continue
 
-        name_part = parts[6]
-        name      = name_part.split()[-1] if name_part else ""
+        # Expected: ID IMAGE COMMAND CREATED STATUS [PORTS] NAMES
+        if len(cols) == 6:
+            container_id, image, command, created, status, name = cols
+            ports = ""
+        else:
+            container_id, image, command, created, status, ports, name = cols[:7]
 
         containers.append({
-            "container_id": parts[0],
-            "image":        parts[1],
-            "command":      parts[2],
-            "created":      f"{parts[3]} {parts[4]}",
-            "status":       parts[5],
-            "name":         name,
+            "container_id": container_id,
+            "image": image,
+            "command": command,
+            "created": created,
+            "status": status,
+            "name": name,
+            "ports": ports,
         })
 
     return True, containers
@@ -335,17 +362,49 @@ def parse_docker_ps(text: str) -> tuple[bool, list[dict]]:
 
 def parse_docker_images(text: str) -> list[dict]:
     """
-    Parse 'docker images' output.
-    Returns list of images with repository, tag, id, created, size.
+    Robust parser for images.
+
+    Works with:
+      - docker images --format '{{json .}}'  (recommended)
+      - docker images classic table output  (fallback)
     """
     text = clean(text)
-
-    if "command not found" in text.lower():
+    if not text:
         return []
 
-    images = []
-    lines  = text.splitlines()
+    low = text.lower()
 
+    if "command not found" in low or "not found" in low:
+        return []
+
+    if any(p in low for p in _DOCKER_ERR_PATTERNS):
+        return []
+
+    images: list[dict] = []
+
+    # 1) JSON-lines mode
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or not line.startswith("{"):
+            continue
+        try:
+            j = json.loads(line)
+        except Exception:
+            continue
+
+        images.append({
+            "repository": j.get("Repository"),
+            "tag":        j.get("Tag"),
+            "image_id":   j.get("ID"),
+            "created":    j.get("CreatedSince") or j.get("CreatedAt"),
+            "size":       j.get("Size"),
+        })
+
+    if images:
+        return images
+
+    # 2) Fallback table mode
+    lines = text.splitlines()
     if not lines or "REPOSITORY" not in lines[0].upper():
         return []
 
@@ -354,15 +413,19 @@ def parse_docker_images(text: str) -> list[dict]:
         if not line:
             continue
 
-        parts = line.split(None, 4)
-        if len(parts) >= 5:
-            images.append({
-                "repository": parts[0],
-                "tag":        parts[1],
-                "image_id":   parts[2],
-                "created":    parts[3],
-                "size":       parts[4],
-            })
+        cols = re.split(r"\s{2,}", line)
+        # REPOSITORY TAG IMAGE ID CREATED SIZE
+        if len(cols) < 5:
+            continue
+
+        repository, tag, image_id, created, size = cols[:5]
+        images.append({
+            "repository": repository,
+            "tag": tag,
+            "image_id": image_id,
+            "created": created,
+            "size": size,
+        })
 
     return images
 

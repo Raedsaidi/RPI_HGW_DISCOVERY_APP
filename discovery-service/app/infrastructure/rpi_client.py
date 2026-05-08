@@ -1,3 +1,4 @@
+# app/infrastructure/rpi_client.py
 import json
 import re
 import logging
@@ -12,7 +13,7 @@ from app.parsers.rpi_parser import (
     parse_temperature,
     parse_ip_addr,
     parse_ip_route_dev,
-    parse_ip_neigh_gateway_mac,   # NEW
+    parse_ip_neigh_gateway_mac,
     parse_ps_scripts,
     parse_docker_ps,
     parse_docker_images,
@@ -39,7 +40,7 @@ class RpiCollectedData:
     lan_mac: Optional[str] = None
     hgw_ip: Optional[str] = None
 
-    # NEW: MAC de la gateway (vue depuis le RPi)
+    # MAC de la gateway (vue depuis le RPi)
     hgw_gateway_mac: Optional[str] = None
 
     all_ips: str = "[]"
@@ -56,6 +57,8 @@ class RpiCollectedData:
     # Processes
     running_scripts: str = "[]"
     running_python: str = "[]"
+
+    # Docker
     docker_available: bool = False
     docker_containers: str = "[]"
     docker_images: str = "[]"
@@ -88,7 +91,7 @@ class RpiClient:
         self, ip_mgmt: str
     ) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str], str]:
         """
-        Step 1 : 'ip a' → select LAN interface (not 127/172/169.254, ignore virtual)
+        Step 1 : 'ip a' → select LAN interface
         Step 2 : 'ip r s dev <lan_iface>' → Extract gateway IP (HGW)
 
         Returns:
@@ -103,36 +106,16 @@ class RpiClient:
         lan_iface, lan_ip, lan_mac = parse_ip_addr(ipa_raw)
 
         if not lan_iface:
-            logger.warning(
-                "[RPI] %s: No LAN interface found in 'ip a' output",
-                ip_mgmt,
-            )
+            logger.warning("[RPI] %s: No LAN interface found in 'ip a' output", ip_mgmt)
             return None, None, None, None, ipa_raw
-
-        logger.info(
-            "[RPI] %s: LAN interface found → %s / %s (mac=%s)",
-            ip_mgmt, lan_iface, lan_ip, lan_mac,
-        )
 
         cmd = f"ip r s dev {lan_iface}"
         ok_route, route_raw = self.session.execute(cmd, timeout=10)
         if not ok_route:
-            logger.warning(
-                "[RPI] %s: '%s' command failed → hgw_ip will be None",
-                ip_mgmt, cmd,
-            )
+            logger.warning("[RPI] %s: '%s' failed → hgw_ip None", ip_mgmt, cmd)
             return lan_iface, lan_ip, lan_mac, None, ipa_raw
 
         hgw_ip = parse_ip_route_dev(route_raw)
-
-        if hgw_ip is None:
-            logger.warning(
-                "[RPI] %s: No gateway found in '%s' output → hgw_ip=None",
-                ip_mgmt, cmd,
-            )
-        else:
-            logger.info("[RPI] %s: HGW (gateway) = %s", ip_mgmt, hgw_ip)
-
         return lan_iface, lan_ip, lan_mac, hgw_ip, ipa_raw
 
     def _get_gateway_mac(
@@ -140,8 +123,7 @@ class RpiClient:
     ) -> Optional[str]:
         """
         Get MAC of gateway (hgw_ip) from neighbor table on RPi.
-        Uses:
-            ip neigh show <hgw_ip> dev <lan_iface>
+        Uses: ip neigh show <hgw_ip> dev <lan_iface>
         If not present, ping once then retry.
         """
         if not lan_iface or not hgw_ip:
@@ -151,17 +133,11 @@ class RpiClient:
         ok1, neigh_raw1 = self.session.execute(cmd, timeout=5)
         mac = parse_ip_neigh_gateway_mac(neigh_raw1) if ok1 else None
         if mac:
-            logger.info("[RPI] %s: gateway MAC = %s (from neigh)", ip_mgmt, mac)
             return mac
 
-        # Neighbor entry may not exist yet → ping then retry
         self.session.execute(f"ping -c 1 -W 1 {hgw_ip} >/dev/null 2>&1 || true", timeout=5)
         ok2, neigh_raw2 = self.session.execute(cmd, timeout=5)
         mac = parse_ip_neigh_gateway_mac(neigh_raw2) if ok2 else None
-        if mac:
-            logger.info("[RPI] %s: gateway MAC = %s (after ping)", ip_mgmt, mac)
-        else:
-            logger.debug("[RPI] %s: cannot resolve gateway MAC for %s", ip_mgmt, hgw_ip)
         return mac
 
     # ──────────────────────────────────────────────────────────────
@@ -174,9 +150,7 @@ class RpiClient:
         ok_h, hostname_raw = self.session.execute("hostname", timeout=10)
         hostname = clean(hostname_raw).split("\n")[0].strip() if ok_h else ""
 
-        ok_os, os_raw = self.session.execute(
-            "cat /etc/os-release 2>/dev/null", timeout=10
-        )
+        ok_os, os_raw = self.session.execute("cat /etc/os-release 2>/dev/null", timeout=10)
         os_info = parse_os_release(os_raw) if ok_os else {}
 
         ok_model, model_raw = self.session.execute(
@@ -190,63 +164,67 @@ class RpiClient:
 
         # Network
         lan_iface, lan_ip, lan_mac, hgw_ip, raw_ip_addr = self._get_lan_and_hgw(ip_mgmt)
-
-        # NEW: gateway mac
         hgw_gateway_mac = self._get_gateway_mac(ip_mgmt, lan_iface, hgw_ip)
-
         all_ips = self._build_all_ips(raw_ip_addr)
 
+        # Temperature
         ok_temp, temp_raw = self.session.execute(
             "vcgencmd measure_temp 2>/dev/null || echo ''", timeout=10
         )
         temp = parse_temperature(temp_raw) if ok_temp else None
 
+        # Memory
         ok_mem, mem_raw = self.session.execute("free -m", timeout=10)
         mem = parse_free_output(mem_raw) if ok_mem else {}
 
+        # Disk
         ok_df, df_raw = self.session.execute("df -h", timeout=10)
         disk = parse_df_output(df_raw) if ok_df else {}
 
+        # PS
         ok_ps, ps_raw = self.session.execute("ps aux 2>/dev/null", timeout=15)
         scripts, python_procs = parse_ps_scripts(ps_raw) if ok_ps else ([], [])
 
+        # ── Docker (ROBUST) ─────────────────────────────────────────
         docker_avail = False
         containers = []
         images = []
 
-        ok_docker_test, docker_test_raw = self.session.execute(
-            "docker --version 2>/dev/null || echo 'not found'", timeout=5
+        # 1) check docker binary existence (fast)
+        ok_docker_bin, docker_bin_raw = self.session.execute(
+            "command -v docker >/dev/null 2>&1 && echo ok || echo missing",
+            timeout=5,
         )
 
-        if ok_docker_test and "not found" not in docker_test_raw.lower():
-            docker_avail = True
-
+        if ok_docker_bin and "ok" in (docker_bin_raw or "").lower():
+            # 2) collect containers in JSON-lines mode (capture stderr!)
             ok_dps, dps_raw = self.session.execute(
-                "docker ps -a 2>/dev/null", timeout=15
+                r"docker ps -a --no-trunc --format '{{json .}}' 2>&1",
+                timeout=20,
             )
-            if ok_dps:
-                _, containers = parse_docker_ps(dps_raw)
 
-            ok_img, img_raw = self.session.execute(
-                "docker images 2>/dev/null", timeout=15
-            )
-            if ok_img:
-                images = parse_docker_images(img_raw)
+            if ok_dps:
+                docker_usable, containers = parse_docker_ps(dps_raw)
+                docker_avail = docker_usable
+
+                if docker_avail:
+                    ok_img, img_raw = self.session.execute(
+                        r"docker images --no-trunc --format '{{json .}}' 2>&1",
+                        timeout=20,
+                    )
+                    if ok_img:
+                        images = parse_docker_images(img_raw)
+            else:
+                docker_avail = False
 
             logger.info(
-                "[RPI] %s: Docker → %d containers, %d images",
-                ip_mgmt, len(containers), len(images),
+                "[RPI] %s: Docker available=%s → %d containers, %d images",
+                ip_mgmt, docker_avail, len(containers), len(images),
             )
 
-        ok_usb, usb_raw = self.session.execute(
-            "lsusb 2>/dev/null || echo ''", timeout=10
-        )
+        # USB
+        ok_usb, usb_raw = self.session.execute("lsusb 2>/dev/null || echo ''", timeout=10)
         usb_devices = parse_lsusb(usb_raw) if ok_usb else []
-
-        logger.info(
-            "[RPI] Collected %s → hostname=%s | iface=%s | lan=%s | hgw=%s | gw_mac=%s | temp=%s°C",
-            ip_mgmt, hostname, lan_iface, lan_ip, hgw_ip, hgw_gateway_mac, temp,
-        )
 
         return RpiCollectedData(
             ip_mgmt=ip_mgmt,
@@ -256,27 +234,36 @@ class RpiClient:
             os_pretty=os_info.get("PRETTY_NAME", ""),
             model=model,
             kernel=kernel,
+
             lan_iface=lan_iface,
             lan_ip=lan_ip,
             lan_mac=lan_mac,
             hgw_ip=hgw_ip,
-            hgw_gateway_mac=hgw_gateway_mac,   # NEW
+            hgw_gateway_mac=hgw_gateway_mac,
+
             all_ips=json.dumps(all_ips),
+
             temp_celsius=temp,
             mem_total_mb=mem.get("total_mb"),
             mem_used_mb=mem.get("used_mb"),
             mem_free_mb=mem.get("free_mb"),
+
             disk_total=disk.get("total"),
             disk_used=disk.get("used"),
             disk_used_pct=disk.get("used_pct"),
+
             running_scripts=json.dumps(scripts),
             running_python=json.dumps(python_procs),
+
             docker_available=docker_avail,
             docker_containers=json.dumps(containers),
             docker_images=json.dumps(images),
+
             usb_devices=json.dumps(usb_devices),
+
             raw_ip_addr=raw_ip_addr,
             raw_ps=ps_raw if ok_ps else "",
+
             success=True,
         )
 

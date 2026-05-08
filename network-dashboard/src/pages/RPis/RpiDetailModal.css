@@ -582,3 +582,16 @@
   color: var(--success-dark);
   border-color: rgba(34, 197, 94, 0.25);
 }
+
+.rpi-detail__docker-item--clickable { cursor: pointer; }
+.rpi-detail__docker-item--clickable:hover { background: rgba(255,255,255,0.04); }
+
+.rpi-detail__docker-details-grid { display: grid; gap: 8px; }
+.rpi-detail__docker-details-row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+.rpi-detail__docker-details-key { font-weight: 600; opacity: 0.85; }
+.rpi-detail__docker-details-val { word-break: break-word; }
