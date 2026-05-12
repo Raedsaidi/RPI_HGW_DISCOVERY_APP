@@ -41,7 +41,7 @@ const ICONS = { switch: '⇄', rpi: '◉', hgw: '⊙' }
 // Roles that can see the full topology / switch view
 const FULL_ACCESS_ROLES = ['SUPER_ADMIN', 'ADMIN']
 
-// ✅ NEW: reserved identifier (backend)
+// reserved identifier (backend)
 const ALL_HGW_IDENTIFIER = 'ALL'
 
 // All 3 view modes
@@ -61,7 +61,7 @@ const shortKey = (k) => {
  * Key used to deduplicate HGW nodes in the graph.
  * Priority:
  *  - serial_number (best)
- *  - instance_key  (our new stable key for HGW instances)
+ *  - instance_key
  *  - fallback legacy: ip|via:rpi
  */
 const getHgwGraphKey = (hgw, rpi) => {
@@ -92,9 +92,7 @@ const normalizeHgwsForSelector = (list) => {
     const model = first.model_name || first.ip || g.value
     const serial = first.serial_number
     const count = g.instances.length
-    const instKeys = [
-      ...new Set(g.instances.map((x) => x.instance_key).filter(Boolean)),
-    ]
+    const instKeys = [...new Set(g.instances.map((x) => x.instance_key).filter(Boolean))]
 
     const instLabel = instKeys.length
       ? ` [${instKeys
@@ -224,12 +222,7 @@ const isFailedNode = (node) => {
   if (!node) return false
   const d = node.data || {}
   if (node.type === 'rpi') {
-    return !!(
-      d.ssh_success === false ||
-      d.last_ssh_success === false ||
-      d.ssh_error ||
-      d.last_ssh_error
-    )
+    return !!(d.ssh_success === false || d.last_ssh_success === false || d.ssh_error || d.last_ssh_error)
   }
   if (node.type === 'hgw') return !!(d.ssh_success === false || d.ssh_error)
   if (node.type === 'switch') return !!d.ssh_error
@@ -264,8 +257,10 @@ const TopologyPage = () => {
   const [stats, setStats] = useState({ switches: 0, rpis: 0, hgws: 0 })
   const [expanded, setExpanded] = useState(false)
 
-  // ── View mode state ──
+  // ✅ NEW: mini update loading state
+  const [miniUpdating, setMiniUpdating] = useState(false)
 
+  // ── View mode state ──
   const hasAllAssigned = (user?.project_hgws || []).includes(ALL_HGW_IDENTIFIER)
   const isFullAccess = FULL_ACCESS_ROLES.includes(user?.role) || hasAllAssigned
 
@@ -274,7 +269,7 @@ const TopologyPage = () => {
   const [selectedHgwId, setSelectedHgwId] = useState('')
 
   const [availableSwitches, setAvailableSwitches] = useState([])
-  // NEW: we store normalized options: [{value, label, instances}]
+  // we store normalized options: [{value, label, instances}]
   const [availableHgws, setAvailableHgws] = useState([])
   const [hgwsLoading, setHgwsLoading] = useState(false)
 
@@ -379,10 +374,7 @@ const TopologyPage = () => {
 
         if (!silent) notify('success', 'Topology loaded successfully')
       } catch (e) {
-        const msg = getFriendlyMessage(
-          'error',
-          e.response?.data?.detail || 'Failed to load topology'
-        )
+        const msg = getFriendlyMessage('error', e.response?.data?.detail || 'Failed to load topology')
         setError(msg)
         notify('error', msg)
         setTopology(null)
@@ -392,6 +384,42 @@ const TopologyPage = () => {
     },
     [notify, viewMode, selectedSwitchIp, selectedHgwId, isFullAccess]
   )
+
+  // ✅ NEW: trigger mini discovery update for selected HGW
+  const handleMiniDiscoveryForSelectedHgw = useCallback(async () => {
+    const rid = runId || topology?.run_id
+    if (!rid) {
+      notify('error', 'No run selected.')
+      return
+    }
+
+    if (!selectedNode || selectedNode.type !== 'hgw') return
+
+    const via = selectedNode.data?.via_rpi_ips || []
+    if (!via.length) {
+      notify('error', 'No via RPi found for this gateway.')
+      return
+    }
+
+    setMiniUpdating(true)
+    try {
+      await discoveryApi.miniHgwUpdate(rid, {
+        via_rpi_ips: via,
+        instance_key: selectedNode.data?.instance_key || null,
+        hgw_ip: selectedNode.data?.ip || selectedNode.ip || null,
+      })
+
+      notify('success', 'Mini discovery started. Topology will refresh automatically.')
+
+      // refresh quickly so run_status becomes "running" and polling starts
+      setTimeout(() => fetchTopology(rid, { silent: true }), 400)
+    } catch (e) {
+      const msg = getFriendlyMessage('error', e.response?.data?.detail || 'Mini discovery failed')
+      notify('error', msg)
+    } finally {
+      setMiniUpdating(false)
+    }
+  }, [runId, topology?.run_id, selectedNode, notify, fetchTopology])
 
   /* ── initial load ── */
   useEffect(() => {
@@ -515,21 +543,11 @@ const TopologyPage = () => {
         .force('center', d3.forceCenter(W / 2, H / 2))
         .force('x', d3.forceX(W / 2).strength(0.04))
         .force('y', d3.forceY(H / 2).strength(0.04))
-        .force(
-          'collision',
-          d3.forceCollide().radius((d) => NODE_RADIUS[d.type] + 22)
-        )
+        .force('collision', d3.forceCollide().radius((d) => NODE_RADIUS[d.type] + 22))
 
       svg.on('click', () => setSelectedNode(null))
 
-      graphRef.current = {
-        inited: true,
-        svg,
-        g,
-        linkGroup,
-        nodeGroup,
-        simulation,
-      }
+      graphRef.current = { inited: true, svg, g, linkGroup, nodeGroup, simulation }
     }
 
     const { svg, linkGroup, nodeGroup, simulation } = graphRef.current
@@ -639,7 +657,14 @@ const TopologyPage = () => {
       .attr('font-weight', '600')
       .text((d) => ICONS[d.type] || '●')
 
-    nodeEnter.append('rect').attr('rx', 4).attr('ry', 4).attr('fill', '#fff').attr('stroke', (d) => NODE_COLORS[d.type].border).attr('stroke-width', 1).attr('opacity', 0.92)
+    nodeEnter
+      .append('rect')
+      .attr('rx', 4)
+      .attr('ry', 4)
+      .attr('fill', '#fff')
+      .attr('stroke', (d) => NODE_COLORS[d.type].border)
+      .attr('stroke-width', 1)
+      .attr('opacity', 0.92)
 
     nodeEnter
       .append('text')
@@ -733,9 +758,7 @@ const TopologyPage = () => {
   /* ── empty state message ── */
   const emptyMessage = () => {
     if (viewMode === VIEW_SWITCH) {
-      return selectedSwitchIp
-        ? `No devices found on switch ${selectedSwitchIp}`
-        : 'Select a switch to view its topology'
+      return selectedSwitchIp ? `No devices found on switch ${selectedSwitchIp}` : 'Select a switch to view its topology'
     }
     if (viewMode === VIEW_HGW) {
       return selectedHgwId ? 'No devices found for this gateway' : 'Select a gateway to view its topology'
@@ -748,9 +771,7 @@ const TopologyPage = () => {
 
   return (
     <div className="topology-page">
-      {expanded && (
-        <div className="topology-page__backdrop" onClick={() => setExpanded(false)} />
-      )}
+      {expanded && <div className="topology-page__backdrop" onClick={() => setExpanded(false)} />}
 
       {/* ── Header ── */}
       <div className="page-header">
@@ -868,9 +889,7 @@ const TopologyPage = () => {
                 value={selectedHgwId}
                 onChange={(e) => setSelectedHgwId(e.target.value)}
               >
-                {!isFullAccess && availableHgws.length === 0 && (
-                  <option value="">No gateways assigned</option>
-                )}
+                {!isFullAccess && availableHgws.length === 0 && <option value="">No gateways assigned</option>}
                 {isFullAccess && <option value="">— Select a gateway —</option>}
                 {availableHgws.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -1020,9 +1039,7 @@ const TopologyPage = () => {
                   </div>
                   <div className="topology-page__detail-row">
                     <span>Firmware</span>
-                    <span>
-                      {selectedNode.data?.firmware_version || selectedNode.data?.firmware || '—'}
-                    </span>
+                    <span>{selectedNode.data?.firmware_version || selectedNode.data?.firmware || '—'}</span>
                   </div>
                   <div className="topology-page__detail-row">
                     <span>RPis</span>
@@ -1122,9 +1139,7 @@ const TopologyPage = () => {
                   <div className="topology-page__detail-row">
                     <span>Via RPis</span>
                     <span className="mono">
-                      {(selectedNode.data?.via_rpi_ips || []).length
-                        ? selectedNode.data.via_rpi_ips.join(', ')
-                        : '—'}
+                      {(selectedNode.data?.via_rpi_ips || []).length ? selectedNode.data.via_rpi_ips.join(', ') : '—'}
                     </span>
                   </div>
                   <div className="topology-page__detail-row">
@@ -1152,6 +1167,20 @@ const TopologyPage = () => {
                       <span>{selectedNode.data.ssh_error}</span>
                     </div>
                   )}
+
+                  {/* ✅ NEW: mini discovery button */}
+                  <div className="topology-page__detail-actions">
+                    <Button
+                      variant="primary"
+                      icon={RefreshCw}
+                      size="md"
+                      loading={miniUpdating}
+                      disabled={!topology?.run_id || topology?.run_status === 'running'}
+                      onClick={handleMiniDiscoveryForSelectedHgw}
+                    >
+                      Mini discovery (update)
+                    </Button>
+                  </div>
                 </>
               )}
 

@@ -16,7 +16,6 @@ import dayjs from 'dayjs'
 import '@/styles/animations.css'
 import './HGWsPage.css'
 
-/* Fallback si le backend ne renvoie pas h.network */
 const fallbackNetworkPrefix = (ip) => {
   if (!ip) return null
   const parts = ip.split('.')
@@ -32,38 +31,28 @@ const HGWsPage = () => {
   const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
 
-  /* filters */
   const [search, setSearch] = useState('')
   const [filterNetwork, setFilterNetwork] = useState('')
   const [filterManufacturer, setFilterManufacturer] = useState('')
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 25
 
-  /**
-   * NEW:
-   * Prefer stable identity for UI actions. If backend exposes instance_key, use it.
-   * Otherwise fallback to ip|via_rpi_ip.
-   */
   const getHgwRowKey = (row) =>
-    row?.serial_number
-      ? `serial:${row.serial_number}`
-      : row?.instance_key
-        ? `inst:${row.instance_key}`
+    row?.id != null
+      ? `id:${row.id}`
+      : row?.serial_number
+        ? `serial:${row.serial_number}`
         : row?.via_rpi_ip
           ? `${row.ip}|${row.via_rpi_ip}`
           : row?.ip
 
-  /* reconnect */
   const [reconnectingKey, setReconnectingKey] = useState(null)
 
-  /* modals */
   const [detailTarget, setDetailTarget] = useState(null)
   const [historyTarget, setHistoryTarget] = useState(null)
 
-  /* terminal */
   const [terminalTarget, setTerminalTarget] = useState(null)
 
-  /* ── fetch ── */
   const fetchHgws = useCallback(async () => {
     setLoading(true)
     try {
@@ -92,7 +81,6 @@ const HGWsPage = () => {
   const handleNetworkFilter = (val) => { setFilterNetwork(val); setPage(1) }
   const handleManufFilter = (val) => { setFilterManufacturer(val); setPage(1) }
 
-  /* ── derive unique manufacturers & networks ── */
   const manufacturers = useMemo(
     () => [...new Set(data.map((h) => h.manufacturer).filter(Boolean))],
     [data]
@@ -103,7 +91,6 @@ const HGWsPage = () => {
     return [...new Set(values)].sort()
   }, [data])
 
-  /* ── reconnect ── */
   const handleReconnect = async (row) => {
     if (!row?.ip) return
 
@@ -128,7 +115,6 @@ const HGWsPage = () => {
     }
   }
 
-  /* ── columns ── */
   const columns = [
     {
       key: 'ip',
@@ -172,16 +158,6 @@ const HGWsPage = () => {
       render: (val) =>
         val ? <span className="hgw-table__mono">{val}</span> : <span className="hgw-table__null">—</span>,
     },
-
-    // OPTIONAL BUT USEFUL: shows instance_key if backend returns it
-    {
-      key: 'instance_key',
-      title: 'Instance',
-      width: 160,
-      render: (val) =>
-        val ? <span className="hgw-table__mono">{val}</span> : <span className="hgw-table__null">—</span>,
-    },
-
     {
       key: 'software_version',
       title: 'SW Version',
@@ -251,7 +227,6 @@ const HGWsPage = () => {
 
   return (
     <div className="hgws-page">
-      {/* ── Header ── */}
       <div className="page-header">
         <div>
           <h2 className="page-title">Home Gateways</h2>
@@ -264,7 +239,6 @@ const HGWsPage = () => {
         </Button>
       </div>
 
-      {/* ── Summary strip ── */}
       <div className="hgws-page__summary">
         <div className="hgws-page__summary-item hgws-page__summary-item--total">
           <Wifi size={16} />
@@ -288,51 +262,29 @@ const HGWsPage = () => {
         )}
       </div>
 
-      {/* ── Table card ── */}
       <Card padding={false}>
         <div className="hgws-page__filters">
-          <SearchBar
-            value={search}
-            onChange={handleSearch}
-            placeholder="Search by IP, model, serial..."
-            width={300}
-          />
+          <SearchBar value={search} onChange={handleSearch} placeholder="Search by IP, model, serial..." width={300} />
 
           <div className="hgws-page__filter-row">
             <div className="hgws-page__filter-group">
               <label className="hgws-page__filter-label">Network</label>
-              <select
-                className="hgws-page__select"
-                value={filterNetwork}
-                onChange={(e) => handleNetworkFilter(e.target.value)}
-              >
+              <select className="hgws-page__select" value={filterNetwork} onChange={(e) => handleNetworkFilter(e.target.value)}>
                 <option value="">All networks</option>
-                {networks.map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
+                {networks.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
 
             <div className="hgws-page__filter-group">
               <label className="hgws-page__filter-label">Manufacturer</label>
-              <select
-                className="hgws-page__select"
-                value={filterManufacturer}
-                onChange={(e) => handleManufFilter(e.target.value)}
-              >
+              <select className="hgws-page__select" value={filterManufacturer} onChange={(e) => handleManufFilter(e.target.value)}>
                 <option value="">All</option>
-                {manufacturers.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
+                {manufacturers.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
 
             {filterNetwork && (
-              <button
-                className="hgws-page__filter-clear"
-                onClick={() => handleNetworkFilter('')}
-                title="Clear network filter"
-              >
+              <button className="hgws-page__filter-clear" onClick={() => handleNetworkFilter('')} title="Clear network filter">
                 {filterNetwork} ✕
               </button>
             )}
@@ -345,43 +297,28 @@ const HGWsPage = () => {
           <>
             <Table columns={columns} data={data} rowKey="id" emptyText="No gateways found" />
             {total > 0 && (
-              <Pagination
-                page={page}
-                totalPages={totalPages}
-                total={total}
-                pageSize={PAGE_SIZE}
-                onChange={setPage}
-              />
+              <Pagination page={page} totalPages={totalPages} total={total} pageSize={PAGE_SIZE} onChange={setPage} />
             )}
           </>
         )}
       </Card>
 
-      {/* ── Modals ── */}
-      <HgwDetailModal
-        open={!!detailTarget}
-        onClose={() => setDetailTarget(null)}
-        hgwData={detailTarget}
-      />
-      <HgwHistoryModal
-        open={!!historyTarget}
-        onClose={() => setHistoryTarget(null)}
-        hgwData={historyTarget}
-      />
+      <HgwDetailModal open={!!detailTarget} onClose={() => setDetailTarget(null)} hgwData={detailTarget} />
+      <HgwHistoryModal open={!!historyTarget} onClose={() => setHistoryTarget(null)} hgwData={historyTarget} />
 
-      {/* ── Terminal (autoStart: session ouverte immédiatement) ── */}
+      {/* ✅ FIX: terminal opened/listed by ID */}
       <TerminalModal
         open={!!terminalTarget}
         onClose={() => setTerminalTarget(null)}
         title={`Terminal — HGW ${terminalTarget?.ip || ''}`}
         deviceType="hgw"
-        targetLabel={terminalTarget?.ip || ''}
-        targetKey={terminalTarget ? getHgwRowKey(terminalTarget) : ''}
-        apiOpen={() => hgwsApi.terminalOpen(
-          terminalTarget.ip,
+        targetLabel={`${terminalTarget?.serial_number || ''} ${terminalTarget?.ip || ''}`}
+        targetKey={terminalTarget?.id || ''}  // unique
+        apiOpen={() => hgwsApi.terminalOpenById(
+          terminalTarget.id,
           terminalTarget?.via_rpi_ip ? { via_rpi_ip: terminalTarget.via_rpi_ip } : undefined
         )}
-        apiList={() => hgwsApi.terminalList(terminalTarget.ip)}
+        apiList={() => hgwsApi.terminalListById(terminalTarget.id)}
         apiClose={(sid) => hgwsApi.terminalClose(sid)}
         wsPathForSession={(sid) => `/api/v1/hgws/terminal/${sid}/ws`}
         autoStart={true}

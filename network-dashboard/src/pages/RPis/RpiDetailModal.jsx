@@ -60,28 +60,23 @@ const ScriptList = ({ items }) => {
   )
 }
 
-/* ── Liste spécifique pour all_ips (objets {iface, ip, mac}) ── */
+/* ── Liste IP (objets {iface, ip, mac}) ── */
 const IpList = ({ items }) => {
   if (!items || items.length === 0)
     return <EmptySm text="No IP addresses found" />
 
-  /* Si c'est un tableau de strings simple */
   if (typeof items[0] === 'string') return <ScriptList items={items} />
 
-  /* Si c'est un tableau d'objets */
   return (
     <div className="rpi-detail__ip-list">
       {items.map((entry, i) => (
         <div key={i} className="rpi-detail__ip-item">
-          {/* Interface */}
           {entry.iface && (
             <span className="rpi-detail__ip-iface">{entry.iface}</span>
           )}
-          {/* IP */}
           {entry.ip && (
             <span className="rpi-detail__ip-addr mono">{entry.ip}</span>
           )}
-          {/* MAC */}
           {entry.mac && (
             <span className="rpi-detail__ip-mac mono">{entry.mac}</span>
           )}
@@ -91,7 +86,7 @@ const IpList = ({ items }) => {
   )
 }
 
-/* ── Liste USB — peut être objets ou strings ── */
+/* ── Liste USB ── */
 const UsbList = ({ items }) => {
   if (!items || items.length === 0)
     return <EmptySm text="No USB devices detected" />
@@ -99,7 +94,6 @@ const UsbList = ({ items }) => {
   return (
     <div className="rpi-detail__script-list">
       {items.map((item, i) => {
-        /* Si string simple */
         if (typeof item === 'string') {
           return (
             <div key={i} className="rpi-detail__script-item">
@@ -108,7 +102,6 @@ const UsbList = ({ items }) => {
             </div>
           )
         }
-        /* Si objet */
         return (
           <div
             key={i}
@@ -130,20 +123,32 @@ const UsbList = ({ items }) => {
   )
 }
 
-/* ── NEW: Docker details viewer ── */
+/* ── Docker detail viewer ── */
 const DockerObjectDetails = ({ data }) => {
   if (!data) return <EmptySm text="No details" />
 
-  const entries = Object.entries(data)
+  // Champs à afficher en premier (ordre logique)
+  const FIELD_ORDER = [
+    'name', 'container_id', 'image', 'image_id',
+    'repository', 'tag', 'status', 'state',
+    'created', 'command', 'ports', 'size',
+  ]
+
+  const orderedEntries = [
+    ...FIELD_ORDER
+      .filter((k) => k in data)
+      .map((k) => [k, data[k]]),
+    ...Object.entries(data).filter(([k]) => !FIELD_ORDER.includes(k)),
+  ]
 
   return (
     <div className="rpi-detail__docker-details">
       <div className="rpi-detail__docker-details-grid">
-        {entries.map(([k, v]) => (
+        {orderedEntries.map(([k, v]) => (
           <div key={k} className="rpi-detail__docker-details-row">
             <div className="rpi-detail__docker-details-key">{k}</div>
             <div className="rpi-detail__docker-details-val mono">
-              {v === null || v === undefined
+              {v === null || v === undefined || v === ''
                 ? '—'
                 : typeof v === 'string'
                 ? v
@@ -164,16 +169,24 @@ const DockerObjectDetails = ({ data }) => {
 }
 
 /* ─────────────────────────────────────────
-   Component
+   Container status badge helper
+───────────────────────────────────────── */
+const containerStatusClass = (status) => {
+  if (!status) return 'stopped'
+  const s = status.toLowerCase()
+  if (s.includes('up') || s.includes('running')) return 'running'
+  if (s.includes('exited') || s.includes('stopped')) return 'stopped'
+  return 'stopped'
+}
+
+/* ─────────────────────────────────────────
+   Main Component
 ───────────────────────────────────────── */
 const RpiDetailModal = ({ open, onClose, rpiData }) => {
-  const [facts, setFacts] = useState([])
+  const [facts, setFacts]               = useState([])
   const [loadingFacts, setLoadingFacts] = useState(false)
-  const [tab, setTab] = useState('info')
-
-  // NEW: docker click → details modal
+  const [tab, setTab]                   = useState('info')
   const [dockerDetail, setDockerDetail] = useState(null)
-  // dockerDetail = { type: 'container'|'image', data: object } | null
 
   useEffect(() => {
     if (!open || !rpiData) return
@@ -191,21 +204,24 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
 
   const latest = facts[0] || null
 
-  /* parsed JSON fields */
-  const runningScripts = parseJson(latest?.running_scripts)
+  /* Parsed JSON fields from latest fact */
+  const runningScripts  = parseJson(latest?.running_scripts)
+  const runningPython   = parseJson(latest?.running_python)
   const dockerContainers = parseJson(latest?.docker_containers)
-  const dockerImages = parseJson(latest?.docker_images)
-  const usbDevices = parseJson(latest?.usb_devices)
-  const allIps = parseJson(latest?.all_ips)
+  const dockerImages     = parseJson(latest?.docker_images)
+  const usbDevices      = parseJson(latest?.usb_devices)
+  const allIps          = parseJson(latest?.all_ips)
 
-  /* memory % */
+  /* Memory % */
   const memPct =
     latest?.mem_total_mb && latest?.mem_used_mb
       ? Math.round((latest.mem_used_mb / latest.mem_total_mb) * 100)
       : null
 
-  /* disk % */
-  const diskPct = latest?.disk_used_pct ? parseFloat(latest.disk_used_pct) : null
+  /* Disk % — stored as string e.g. "45" (without %) */
+  const diskPct = latest?.disk_used_pct
+    ? parseFloat(latest.disk_used_pct)
+    : null
 
   return (
     <>
@@ -220,15 +236,13 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
           {['info', 'metrics', 'scripts', 'hardware', 'history'].map((t) => (
             <button
               key={t}
-              className={`rpi-detail__tab ${
-                tab === t ? 'rpi-detail__tab--active' : ''
-              }`}
+              className={`rpi-detail__tab ${tab === t ? 'rpi-detail__tab--active' : ''}`}
               onClick={() => setTab(t)}
             >
-              {t === 'info' && 'Information'}
+              {t === 'info'    && 'Information'}
               {t === 'metrics' && 'Metrics'}
               {t === 'scripts' && 'Scripts & Docker'}
-              {t === 'hardware' && 'USB & Network'}
+              {t === 'hardware'&& 'USB & Network'}
               {t === 'history' && `History (${facts.length})`}
             </button>
           ))}
@@ -243,12 +257,12 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
               <div className="rpi-detail__section-title">
                 <Cpu size={14} /> Network
               </div>
-              <Row label="IP Address" value={rpiData.ip_mgmt} mono />
-              <Row label="MAC Address" value={rpiData.mac} mono />
-              <Row label="Label" value={rpiData.label} />
-              <Row label="Switch IP" value={rpiData.switch_ip} mono />
+              <Row label="IP Address"  value={rpiData.ip_mgmt}     mono />
+              <Row label="MAC Address" value={rpiData.mac}          mono />
+              <Row label="Label"       value={rpiData.label} />
+              <Row label="Switch IP"   value={rpiData.switch_ip}   mono />
               <Row label="Switch Port" value={rpiData.switch_port} />
-              <Row label="Gateway IP" value={rpiData.hgw_ip} mono />
+              <Row label="Gateway IP"  value={rpiData.hgw_ip}      mono />
             </div>
 
             <div className="rpi-detail__section">
@@ -272,11 +286,9 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
               <Row
                 label="SSH Error"
                 value={
-                  rpiData.last_ssh_error ? (
-                    <span className="rpi-detail__error-msg">
-                      {rpiData.last_ssh_error}
-                    </span>
-                  ) : null
+                  rpiData.last_ssh_error
+                    ? <span className="rpi-detail__error-msg">{rpiData.last_ssh_error}</span>
+                    : null
                 }
               />
               <Row
@@ -312,20 +324,18 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
               </div>
             ) : (
               <>
-                {/* System */}
+                {/* System info */}
                 <div className="rpi-detail__section">
                   <div className="rpi-detail__section-title">
                     <Cpu size={14} /> System
                   </div>
-                  <Row label="Hostname" value={latest.hostname} />
-                  <Row label="OS" value={latest.os_pretty} />
-                  <Row label="OS Name" value={latest.os_name} />
-                  <Row label="OS Version" value={latest.os_version} />
-                  <Row label="Kernel" value={latest.kernel} mono />
-                  <Row label="Model" value={latest.model} />
+                  <Row label="Hostname"      value={latest.hostname} />
+                  <Row label="OS"            value={latest.os_pretty} />
+                  <Row label="Model"         value={latest.model} />
                   <Row label="LAN Interface" value={latest.lan_iface} />
-                  <Row label="LAN IP" value={latest.lan_ip} mono />
-                  <Row label="Gateway IP" value={latest.hgw_ip} mono />
+                  <Row label="LAN IP"        value={latest.lan_ip}  mono />
+                  <Row label="LAN MAC"       value={latest.lan_mac} mono />
+                  <Row label="Gateway IP"    value={latest.hgw_ip}  mono />
                   <Row
                     label="Docker"
                     value={
@@ -344,7 +354,7 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                   />
                 </div>
 
-                {/* Hardware */}
+                {/* Hardware metrics */}
                 <div className="rpi-detail__section">
                   <div className="rpi-detail__section-title">
                     <Thermometer size={14} /> Hardware
@@ -352,11 +362,9 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                   <Row
                     label="Temperature"
                     value={
-                      latest.temp_celsius ? (
-                        <span className="rpi-detail__temp">
-                          {latest.temp_celsius}°C
-                        </span>
-                      ) : null
+                      latest.temp_celsius
+                        ? <span className="rpi-detail__temp">{latest.temp_celsius}°C</span>
+                        : null
                     }
                   />
                   <Row
@@ -365,19 +373,20 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                   />
                   <Row
                     label="Memory Used"
-                    value={latest.mem_used_mb ? `${latest.mem_used_mb} MB` : null}
+                    value={latest.mem_used_mb  ? `${latest.mem_used_mb} MB`  : null}
                   />
                   <Row
                     label="Memory Free"
-                    value={latest.mem_free_mb ? `${latest.mem_free_mb} MB` : null}
+                    value={latest.mem_free_mb  ? `${latest.mem_free_mb} MB`  : null}
                   />
+                  {/* disk_total / disk_used viennent du backend tel quel (ex: "29G", "8.2G") */}
                   <Row
                     label="Disk Total"
-                    value={latest.disk_total_gb ? `${latest.disk_total_gb} GB` : null}
+                    value={latest.disk_total || null}
                   />
                   <Row
                     label="Disk Used"
-                    value={latest.disk_used_gb ? `${latest.disk_used_gb} GB` : null}
+                    value={latest.disk_used  || null}
                   />
                   <Row
                     label="Disk Used %"
@@ -450,16 +459,15 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
               </div>
             ) : (
               <>
-                {/* Running Scripts */}
+                {/* Running Scripts (.sh) */}
                 <div className="rpi-detail__section">
                   <div className="rpi-detail__section-title">
                     <Terminal size={14} /> Running Scripts
                   </div>
-                  {runningScripts ? (
-                    <ScriptList items={runningScripts} />
-                  ) : (
-                    <EmptySm text="No running scripts detected" />
-                  )}
+                  {runningScripts && runningScripts.length > 0
+                    ? <ScriptList items={runningScripts} />
+                    : <EmptySm text="No running scripts detected" />
+                  }
                 </div>
 
                 {/* Running Python */}
@@ -467,13 +475,10 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                   <div className="rpi-detail__section-title">
                     <Terminal size={14} /> Running Python Processes
                   </div>
-                  {latest.running_python ? (
-                    <div className="rpi-detail__raw-block">
-                      {latest.running_python}
-                    </div>
-                  ) : (
-                    <EmptySm text="No Python processes detected" />
-                  )}
+                  {runningPython && runningPython.length > 0
+                    ? <ScriptList items={runningPython} />
+                    : <EmptySm text="No Python processes detected" />
+                  }
                 </div>
 
                 {/* Docker */}
@@ -481,6 +486,7 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                   <div className="rpi-detail__section-title">
                     <Container size={14} /> Docker
                   </div>
+
                   <div className="rpi-detail__row">
                     <span className="rpi-detail__label">Available</span>
                     <span className="rpi-detail__value">
@@ -492,10 +498,10 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
 
                   {latest.docker_available && (
                     <>
-                      {/* Containers */}
+                      {/* ── Containers ── */}
                       <div className="rpi-detail__subsection">
                         <div className="rpi-detail__subsection-title">
-                          Containers ({dockerContainers?.length || 0})
+                          Containers ({dockerContainers?.length ?? 0})
                         </div>
 
                         {dockerContainers && dockerContainers.length > 0 ? (
@@ -506,9 +512,7 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                                 className="rpi-detail__docker-item rpi-detail__docker-item--clickable"
                                 role="button"
                                 tabIndex={0}
-                                onClick={() =>
-                                  setDockerDetail({ type: 'container', data: c })
-                                }
+                                onClick={() => setDockerDetail({ type: 'container', data: c })}
                                 onKeyDown={(e) =>
                                   e.key === 'Enter' &&
                                   setDockerDetail({ type: 'container', data: c })
@@ -517,27 +521,26 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                               >
                                 <div className="rpi-detail__docker-header">
                                   <span className="rpi-detail__docker-name mono">
-                                    {c.name || c.container_id?.substring(0, 12)}
+                                    {c.name || c.container_id?.substring(0, 12) || '—'}
                                   </span>
                                   <span
-                                    className={`rpi-detail__docker-status rpi-detail__docker-status--${
-                                      c.status
-                                        ?.toLowerCase()
-                                        .includes('up')
-                                        ? 'running'
-                                        : 'stopped'
-                                    }`}
+                                    className={`rpi-detail__docker-status rpi-detail__docker-status--${containerStatusClass(c.status)}`}
                                   >
                                     {c.status || 'unknown'}
                                   </span>
                                 </div>
                                 <div className="rpi-detail__docker-meta">
                                   <span className="rpi-detail__docker-image">
-                                    {c.image}
+                                    {c.image || '—'}
                                   </span>
                                   {c.created && (
                                     <span className="rpi-detail__docker-created">
                                       {c.created}
+                                    </span>
+                                  )}
+                                  {c.ports && (
+                                    <span className="rpi-detail__docker-ports mono">
+                                      {c.ports}
                                     </span>
                                   )}
                                 </div>
@@ -549,10 +552,10 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                         )}
                       </div>
 
-                      {/* Images */}
+                      {/* ── Images ── */}
                       <div className="rpi-detail__subsection">
                         <div className="rpi-detail__subsection-title">
-                          Images ({dockerImages?.length || 0})
+                          Images ({dockerImages?.length ?? 0})
                         </div>
 
                         {dockerImages && dockerImages.length > 0 ? (
@@ -563,9 +566,7 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                                 className="rpi-detail__docker-item rpi-detail__docker-item--clickable"
                                 role="button"
                                 tabIndex={0}
-                                onClick={() =>
-                                  setDockerDetail({ type: 'image', data: img })
-                                }
+                                onClick={() => setDockerDetail({ type: 'image', data: img })}
                                 onKeyDown={(e) =>
                                   e.key === 'Enter' &&
                                   setDockerDetail({ type: 'image', data: img })
@@ -576,16 +577,22 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                                   <span className="rpi-detail__docker-name mono">
                                     {img.repository && img.tag
                                       ? `${img.repository}:${img.tag}`
-                                      : img.repository || img.image_id?.substring(0, 12) || 'unknown'}
+                                      : img.repository ||
+                                        img.image_id?.substring(0, 12) ||
+                                        'unknown'}
                                   </span>
-                                  <span className="rpi-detail__docker-size">
-                                    {img.size}
-                                  </span>
+                                  {img.size && (
+                                    <span className="rpi-detail__docker-size">
+                                      {img.size}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="rpi-detail__docker-meta">
-                                  <span className="rpi-detail__docker-id mono">
-                                    {img.image_id?.substring(0, 12)}
-                                  </span>
+                                  {img.image_id && (
+                                    <span className="rpi-detail__docker-id mono">
+                                      {img.image_id.substring(0, 12)}
+                                    </span>
+                                  )}
                                   {img.created && (
                                     <span className="rpi-detail__docker-created">
                                       {img.created}
@@ -620,7 +627,7 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
               </div>
             ) : (
               <>
-                {/* USB Devices */}
+                {/* USB */}
                 <div className="rpi-detail__section">
                   <div className="rpi-detail__section-title">
                     <Usb size={14} /> USB Devices
@@ -636,15 +643,15 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                   <IpList items={allIps} />
                 </div>
 
-                {/* Raw ifconfig */}
-                {latest.raw_ifconfig && (
+                {/* Raw ip addr */}
+                {latest.raw_ip_addr && (
                   <div className="rpi-detail__section">
                     <div className="rpi-detail__section-title">
-                      <Network size={14} /> Raw ifconfig
+                      <Network size={14} /> Raw ip addr
                     </div>
-                    <div className="rpi-detail__raw-block rpi-detail__raw-block--scroll">
-                      {latest.raw_ifconfig}
-                    </div>
+                    <pre className="rpi-detail__raw-block rpi-detail__raw-block--scroll">
+                      {latest.raw_ip_addr}
+                    </pre>
                   </div>
                 )}
 
@@ -654,9 +661,9 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                     <div className="rpi-detail__section-title">
                       <Terminal size={14} /> Raw Process List (ps)
                     </div>
-                    <div className="rpi-detail__raw-block rpi-detail__raw-block--scroll">
+                    <pre className="rpi-detail__raw-block rpi-detail__raw-block--scroll">
                       {latest.raw_ps}
-                    </div>
+                    </pre>
                   </div>
                 )}
               </>
@@ -676,10 +683,11 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
             ) : (
               <div className="rpi-detail__history">
                 {facts.map((fact) => {
-                  const scripts = parseJson(fact.running_scripts)
+                  const scripts    = parseJson(fact.running_scripts)
+                  const python     = parseJson(fact.running_python)
                   const containers = parseJson(fact.docker_containers)
-                  const images = parseJson(fact.docker_images)
-                  const usb = parseJson(fact.usb_devices)
+                  const images     = parseJson(fact.docker_images)
+                  const usb        = parseJson(fact.usb_devices)
                   const pct =
                     fact.mem_total_mb && fact.mem_used_mb
                       ? Math.round((fact.mem_used_mb / fact.mem_total_mb) * 100)
@@ -707,11 +715,13 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                         </div>
                         <div className="rpi-detail__history-row">
                           <span>OS</span>
-                          <span>{fact.os_pretty || fact.os_name || '—'}</span>
+                          <span>{fact.os_pretty || '—'}</span>
                         </div>
                         <div className="rpi-detail__history-row">
                           <span>Temp</span>
-                          <span>{fact.temp_celsius ? `${fact.temp_celsius}°C` : '—'}</span>
+                          <span>
+                            {fact.temp_celsius ? `${fact.temp_celsius}°C` : '—'}
+                          </span>
                         </div>
                         <div className="rpi-detail__history-row">
                           <span>Memory</span>
@@ -724,8 +734,10 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                         <div className="rpi-detail__history-row">
                           <span>Disk</span>
                           <span>
-                            {fact.disk_used_gb && fact.disk_total_gb
-                              ? `${fact.disk_used_gb}/${fact.disk_total_gb} GB`
+                            {fact.disk_used && fact.disk_total
+                              ? `${fact.disk_used} / ${fact.disk_total}`
+                              : fact.disk_used_pct
+                              ? `${fact.disk_used_pct}% used`
                               : '—'}
                           </span>
                         </div>
@@ -747,6 +759,22 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                             {scripts.map((s, i) => (
                               <span key={i} className="rpi-detail__tag">
                                 {typeof s === 'string' ? s : JSON.stringify(s)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Python tags */}
+                      {python && python.length > 0 && (
+                        <div className="rpi-detail__history-scripts">
+                          <span className="rpi-detail__history-scripts-label">
+                            Python:
+                          </span>
+                          <div className="rpi-detail__history-tags">
+                            {python.map((p, i) => (
+                              <span key={i} className="rpi-detail__tag rpi-detail__tag--yellow">
+                                {typeof p === 'string' ? p : JSON.stringify(p)}
                               </span>
                             ))}
                           </div>
@@ -788,7 +816,9 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
                               >
                                 {img.repository && img.tag
                                   ? `${img.repository}:${img.tag}`
-                                  : JSON.stringify(img)}
+                                  : img.repository ||
+                                    img.image_id?.substring(0, 12) ||
+                                    JSON.stringify(img)}
                               </span>
                             ))}
                           </div>
@@ -823,7 +853,7 @@ const RpiDetailModal = ({ open, onClose, rpiData }) => {
       </Modal>
 
       {/* ─────────────────────────────────────────
-          NEW: Docker Details modal (on click)
+          Docker Details sub-modal
       ───────────────────────────────────────── */}
       {dockerDetail && (
         <Modal

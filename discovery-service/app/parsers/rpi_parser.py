@@ -24,7 +24,6 @@ def clean(text: str) -> str:
 
 
 def _is_valid_ip(ip: str) -> bool:
-    """Vérifie qu'une chaîne est une adresse IPv4 valide."""
     try:
         ipaddress.ip_address(ip)
         return True
@@ -33,12 +32,10 @@ def _is_valid_ip(ip: str) -> bool:
 
 
 def _is_excluded_iface(name: str) -> bool:
-    """Retourne True si l'interface doit être ignorée (lo, docker, veth, br-, virbr)."""
     return any(name.startswith(p) for p in EXCLUDED_IFACE_PREFIXES)
 
 
 def _is_excluded_ip(ip: str) -> bool:
-    """Retourne True si l'IP est exclue (loopback, 172.*, APIPA)."""
     return any(ip.startswith(p) for p in EXCLUDED_PREFIXES)
 
 
@@ -58,10 +55,7 @@ def parse_os_release(text: str) -> dict:
 
 
 def parse_free_output(text: str) -> dict:
-    """
-    Parse output of 'free -m'.
-    Returns total, used, free in MB.
-    """
+    """Parse output of 'free -m'. Returns total, used, free in MB."""
     result = {}
     for line in clean(text).splitlines():
         if line.lower().startswith("mem:"):
@@ -77,9 +71,7 @@ def parse_free_output(text: str) -> dict:
 
 
 def parse_df_output(text: str) -> dict:
-    """
-    Parse output of 'df -h' for root filesystem.
-    """
+    """Parse output of 'df -h' for root filesystem."""
     result = {}
     for line in clean(text).splitlines():
         parts = line.split()
@@ -87,17 +79,14 @@ def parse_df_output(text: str) -> dict:
             result["total"]      = parts[1]
             result["used"]       = parts[2]
             result["available"]  = parts[3]
-            result["used_pct"]   = parts[4]
+            result["used_pct"]   = parts[4].replace("%", "")
             result["filesystem"] = parts[0]
             break
     return result
 
 
 def parse_temperature(text: str) -> Optional[str]:
-    """
-    Parse 'vcgencmd measure_temp' output.
-    Example: temp=47.8'C  →  "47.8"
-    """
+    """Parse 'vcgencmd measure_temp' output. Example: temp=47.8'C → '47.8'"""
     text = clean(text)
     m = re.search(r"temp=([0-9.]+)", text)
     return m.group(1) if m else None
@@ -108,14 +97,7 @@ def parse_temperature(text: str) -> Optional[str]:
 def parse_ip_addr(text: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Parse output of 'ip a' to find the best LAN interface.
-
-    Rules:
-    - Ignore interfaces : lo, docker*, veth*, br-*, virbr*
-    - Ignore IPs        : 127.x.x.x / 172.x.x.x / 169.254.x.x
-    - Accept            : toute IP non exclue (192.168.x.x, 10.x.x.x, etc.)
-
-    Priority order: eth0 > eth1 > wlan0 > first found
-
+    Priority: eth0 > eth1 > wlan0 > first found.
     Returns: (lan_iface, lan_ip, mac)
     """
     text = clean(text)
@@ -127,12 +109,8 @@ def parse_ip_addr(text: str) -> tuple[Optional[str], Optional[str], Optional[str
     for line in text.splitlines():
         line = line.strip()
 
-        # ── Nouvelle interface ─────────────────────────────────────────────────
         iface_match = re.match(
-            r"^\d+:\s+"
-            r"([^:@\s]+)"
-            r"(?:@[^\s:]+)?"
-            r":\s+<",
+            r"^\d+:\s+([^:@\s]+)(?:@[^\s:]+)?:\s+<",
             line,
         )
         if iface_match:
@@ -148,25 +126,20 @@ def parse_ip_addr(text: str) -> tuple[Optional[str], Optional[str], Optional[str
         if current_iface is None:
             continue
 
-        # ── MAC address ────────────────────────────────────────────────────────
         mac_match = re.match(r"link/ether\s+([0-9a-f:]{17})", line, re.IGNORECASE)
         if mac_match:
             current_mac = mac_match.group(1).upper()
             continue
 
-        # ── IPv4 ───────────────────────────────────────────────────────────────
         inet_match = re.match(r"inet\s+(\d+\.\d+\.\d+\.\d+)/\d+", line)
         if inet_match:
             ip = inet_match.group(1)
-
             if _is_excluded_ip(ip):
                 logger.debug("[PARSER] ip a: ignored IP %s on %s", ip, current_iface)
                 continue
-
             if not _is_valid_ip(ip):
                 logger.debug("[PARSER] ip a: invalid IP %s on %s", ip, current_iface)
                 continue
-
             candidates.append((current_iface, ip, current_mac))
             logger.debug(
                 "[PARSER] ip a: candidate → iface=%s ip=%s mac=%s",
@@ -179,7 +152,6 @@ def parse_ip_addr(text: str) -> tuple[Optional[str], Optional[str], Optional[str
 
     candidates.sort(key=lambda c: IFACE_PRIORITY.get(c[0], 99))
     iface, ip, mac = candidates[0]
-
     logger.info(
         "[PARSER] ip a: LAN interface selected → %s / %s (mac=%s)",
         iface, ip, mac,
@@ -188,16 +160,11 @@ def parse_ip_addr(text: str) -> tuple[Optional[str], Optional[str], Optional[str
 
 
 def parse_ip_route_dev(text: str) -> Optional[str]:
-    """
-    Parse output of 'ip r s dev <iface>' to extract the gateway IP.
-    """
+    """Parse 'ip r s dev <iface>' to extract gateway IP."""
     text = clean(text)
-
     if not text:
-        logger.debug("[PARSER] ip r s dev: output is empty")
         return None
 
-    # 1) default via ...
     for line in text.splitlines():
         m = re.match(r"^default\s+via\s+(\d+\.\d+\.\d+\.\d+)", line.strip())
         if m:
@@ -205,7 +172,6 @@ def parse_ip_route_dev(text: str) -> Optional[str]:
             if _is_valid_ip(gw):
                 return gw
 
-    # 2) any via ...
     for line in text.splitlines():
         m = re.search(r"\bvia\s+(\d+\.\d+\.\d+\.\d+)", line.strip())
         if m:
@@ -217,30 +183,35 @@ def parse_ip_route_dev(text: str) -> Optional[str]:
 
 
 def detect_hgw(ip_a_text: str, ip_route_text: str) -> dict:
-    """
-    Fonction de haut niveau combinant parse_ip_addr + parse_ip_route_dev.
-    """
+    """Combine parse_ip_addr + parse_ip_route_dev."""
     iface, ip, mac = parse_ip_addr(ip_a_text)
     if not iface:
         return {}
-
     gw = parse_ip_route_dev(ip_route_text)
-    return {
-        "interface": iface,
-        "local_ip":  ip,
-        "mac":       mac,
-        "gateway":   gw,
-    }
+    return {"interface": iface, "local_ip": ip, "mac": mac, "gateway": gw}
+
+
+def parse_ip_neigh_gateway_mac(text: str) -> Optional[str]:
+    """
+    Parse 'ip neigh show <gw_ip> dev <iface>'.
+    Example: 192.168.1.1 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE
+    Returns uppercase MAC or None.
+    """
+    text = clean(text)
+    if not text:
+        return None
+    m = re.search(
+        r"\blladdr\s+([0-9a-f]{2}(?::[0-9a-f]{2}){5})\b",
+        text,
+        re.IGNORECASE,
+    )
+    return m.group(1).upper() if m else None
 
 
 # ── Parsers processus ─────────────────────────────────────────────────────────
 
 def parse_ps_scripts(text: str) -> tuple[list[str], list[str]]:
-    """
-    Parse 'ps aux' output to find:
-    - Running .sh scripts
-    - Running python scripts
-    """
+    """Parse 'ps aux' to find running .sh scripts and python processes."""
     text = clean(text)
     scripts      = []
     python_procs = []
@@ -248,12 +219,10 @@ def parse_ps_scripts(text: str) -> tuple[list[str], list[str]]:
     for line in text.splitlines():
         if "grep" in line or line.strip().startswith("["):
             continue
-
         if ".sh" in line:
             m = re.search(r"(\S+\.sh(\s+\S+)*)", line)
             if m:
                 scripts.append(m.group(0).strip())
-
         if re.search(r"\bpython[0-9]?\b|\bpython3\b", line, re.IGNORECASE):
             parts  = line.split()
             py_cmd = " ".join(parts[10:]) if len(parts) > 10 else line.strip()
@@ -262,171 +231,242 @@ def parse_ps_scripts(text: str) -> tuple[list[str], list[str]]:
     return list(set(scripts)), list(set(python_procs))
 
 
-# ── Parsers Docker (ROBUSTES) ─────────────────────────────────────────────────
+# ── Parsers Docker ────────────────────────────────────────────────────────────
 
 _DOCKER_ERR_PATTERNS = (
     "permission denied",
     "cannot connect to the docker daemon",
     "is the docker daemon running",
     "error during connect",
+    "no such file or directory",
+    "connection refused",
+    "error response from daemon",
 )
+
+# Colonnes attendues pour docker ps / docker images
+_PS_COLS     = ["CONTAINER ID", "IMAGE", "COMMAND", "CREATED", "STATUS", "PORTS", "NAMES"]
+_IMAGES_COLS = ["REPOSITORY", "TAG", "IMAGE ID", "CREATED", "SIZE"]
+
+
+def _docker_has_error(text: str) -> bool:
+    """True si le texte contient une erreur Docker connue."""
+    low = text.lower()
+    if "command not found" in low or "not found" in low:
+        return True
+    return any(p in low for p in _DOCKER_ERR_PATTERNS)
+
+
+def _skip_shell_noise(lines: list[str]) -> list[str]:
+    """
+    Supprime les lignes parasites qui ne font pas partie de l'output Docker :
+      - Échos shell (set -x) : '+ docker ps ...'  '++ docker ...'
+      - Ligne qui reproduit exactement la commande envoyée :
+            'docker ps -a 2>&1'
+            'docker images 2>&1'
+    """
+    filtered = []
+    for line in lines:
+        s = line.strip()
+
+        # PS4 / set -x echo : commence par un ou plusieurs '+'
+        if re.match(r"^\++\s+", s):
+            logger.debug("[PARSER] skipping shell echo (PS4): %r", s[:80])
+            continue
+
+        # Ligne qui est la commande elle-même (sans PS4)
+        if re.match(
+            r"^docker\s+(ps|images)\b",
+            s,
+            re.IGNORECASE,
+        ):
+            logger.debug("[PARSER] skipping command echo: %r", s[:80])
+            continue
+
+        filtered.append(line)
+
+    return filtered
+
+
+def _find_column_offsets(header_line: str, col_names: list[str]) -> dict[str, int]:
+    """
+    Localise chaque colonne dans la ligne header par son offset caractère.
+
+    Exemple :
+        "CONTAINER ID   IMAGE   COMMAND   CREATED   STATUS   PORTS   NAMES"
+        → {"CONTAINER ID": 0, "IMAGE": 15, "COMMAND": 23, ...}
+    """
+    header_upper = header_line.upper()
+    offsets: dict[str, int] = {}
+    for col in col_names:
+        idx = header_upper.find(col)
+        if idx != -1:
+            offsets[col] = idx
+        else:
+            logger.debug("[PARSER] column not found in header: %r", col)
+    return offsets
+
+
+def _split_by_offsets(line: str, col_offsets: dict[str, int]) -> dict[str, str]:
+    """
+    Découpe une ligne selon les offsets de colonnes calculés depuis le header.
+    Gère les lignes plus courtes que le header (ex : PORTS vide en fin de ligne).
+    """
+    sorted_cols = sorted(col_offsets.items(), key=lambda x: x[1])
+    result: dict[str, str] = {}
+
+    for i, (col_name, start) in enumerate(sorted_cols):
+        end     = sorted_cols[i + 1][1] if i + 1 < len(sorted_cols) else len(line)
+        segment = line[start:end] if start < len(line) else ""
+        result[col_name] = segment
+
+    return result
+
+
+# ── Docker containers ─────────────────────────────────────────────────────────
 
 def parse_docker_ps(text: str) -> tuple[bool, list[dict]]:
     """
-    Robust parser for containers.
+    Parse output of 'docker ps -a' (table format).
 
-    Works with:
-      - docker ps -a --format '{{json .}}'   (recommended)
-      - docker ps -a classic table output   (fallback)
+    Expected header:
+        CONTAINER ID   IMAGE   COMMAND   CREATED   STATUS   PORTS   NAMES
 
     Returns:
-      (docker_usable, containers_list)
+        (docker_usable, containers_list)
 
-    docker_usable = False if docker missing OR daemon not reachable OR permission denied.
+    docker_usable = False si Docker absent / daemon inaccessible.
     """
     text = clean(text)
+
     if not text:
+        # Docker OK, simplement 0 conteneurs
         return True, []
 
-    low = text.lower()
-
-    if "command not found" in low or "not found" in low:
+    if _docker_has_error(text):
+        logger.warning("[PARSER] docker ps: error detected: %r", text[:200])
         return False, []
 
-    if any(p in low for p in _DOCKER_ERR_PATTERNS):
-        return False, []
+    # Filtrer les lignes parasites (échos shell)
+    lines = _skip_shell_noise(
+        [l for l in text.splitlines() if l.strip()]
+    )
 
-    containers: list[dict] = []
-
-    # 1) JSON-lines mode
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or not line.startswith("{"):
-            continue
-        try:
-            j = json.loads(line)
-        except Exception:
-            continue
-
-        containers.append({
-            "container_id": j.get("ID"),
-            "image":        j.get("Image"),
-            "command":      j.get("Command"),
-            "created":      j.get("RunningFor") or j.get("CreatedAt"),
-            "status":       j.get("Status"),
-            "name":         j.get("Names"),
-            "ports":        j.get("Ports"),
-        })
-
-    if containers:
-        return True, containers
-
-    # 2) Fallback table mode (best-effort)
-    lines = text.splitlines()
     if not lines:
         return True, []
 
-    header = lines[0].upper()
-    if "CONTAINER" not in header:
+    # ── Trouver le header ──────────────────────────────────────────────────
+    header_idx = None
+    for i, line in enumerate(lines):
+        if "CONTAINER" in line.upper() and "IMAGE" in line.upper():
+            header_idx = i
+            break
+
+    if header_idx is None:
+        logger.warning(
+            "[PARSER] docker ps: no valid header found in output:\n%s",
+            "\n".join(lines[:5]),
+        )
         return True, []
 
-    for line in lines[1:]:
-        line = line.strip()
-        if not line:
+    header      = lines[header_idx]
+    col_offsets = _find_column_offsets(header, _PS_COLS)
+    logger.debug("[PARSER] docker ps: column offsets: %s", col_offsets)
+
+    containers: list[dict] = []
+
+    for line in lines[header_idx + 1:]:
+        line_rstripped = line.rstrip()
+        if not line_rstripped.strip():
             continue
 
-        # split by 2+ spaces so "15 hours ago" and "Removal In Progress" stay intact
-        cols = re.split(r"\s{2,}", line)
-        if len(cols) < 6:
-            continue
+        cols = _split_by_offsets(line_rstripped, col_offsets)
 
-        # Expected: ID IMAGE COMMAND CREATED STATUS [PORTS] NAMES
-        if len(cols) == 6:
-            container_id, image, command, created, status, name = cols
-            ports = ""
-        else:
-            container_id, image, command, created, status, ports, name = cols[:7]
+        container_id = cols.get("CONTAINER ID", "").strip()
+        if not container_id:
+            continue
 
         containers.append({
             "container_id": container_id,
-            "image": image,
-            "command": command,
-            "created": created,
-            "status": status,
-            "name": name,
-            "ports": ports,
+            "image":        cols.get("IMAGE",   "").strip(),
+            "command":      cols.get("COMMAND", "").strip().strip('"'),
+            "created":      cols.get("CREATED", "").strip(),
+            "status":       cols.get("STATUS",  "").strip(),
+            "ports":        cols.get("PORTS",   "").strip(),
+            "name":         cols.get("NAMES",   "").strip(),
         })
 
+    logger.debug("[PARSER] docker ps: parsed %d containers", len(containers))
     return True, containers
 
 
+# ── Docker images ─────────────────────────────────────────────────────────────
+
 def parse_docker_images(text: str) -> list[dict]:
     """
-    Robust parser for images.
+    Parse output of 'docker images' (table format).
 
-    Works with:
-      - docker images --format '{{json .}}'  (recommended)
-      - docker images classic table output  (fallback)
+    Expected header:
+        REPOSITORY   TAG   IMAGE ID   CREATED   SIZE
+
+    Gère les REPOSITORY très longs (pas de troncature par défaut).
     """
     text = clean(text)
+
     if not text:
         return []
 
-    low = text.lower()
-
-    if "command not found" in low or "not found" in low:
+    if _docker_has_error(text):
+        logger.warning("[PARSER] docker images: error detected: %r", text[:200])
         return []
 
-    if any(p in low for p in _DOCKER_ERR_PATTERNS):
+    # Filtrer les lignes parasites (échos shell)
+    lines = _skip_shell_noise(
+        [l for l in text.splitlines() if l.strip()]
+    )
+
+    if not lines:
         return []
+
+    # ── Trouver le header ──────────────────────────────────────────────────
+    header_idx = None
+    for i, line in enumerate(lines):
+        if "REPOSITORY" in line.upper() and "TAG" in line.upper():
+            header_idx = i
+            break
+
+    if header_idx is None:
+        logger.warning(
+            "[PARSER] docker images: no valid header found in output:\n%s",
+            "\n".join(lines[:5]),
+        )
+        return []
+
+    header      = lines[header_idx]
+    col_offsets = _find_column_offsets(header, _IMAGES_COLS)
+    logger.debug("[PARSER] docker images: column offsets: %s", col_offsets)
 
     images: list[dict] = []
 
-    # 1) JSON-lines mode
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or not line.startswith("{"):
-            continue
-        try:
-            j = json.loads(line)
-        except Exception:
+    for line in lines[header_idx + 1:]:
+        line_rstripped = line.rstrip()
+        if not line_rstripped.strip():
             continue
 
-        images.append({
-            "repository": j.get("Repository"),
-            "tag":        j.get("Tag"),
-            "image_id":   j.get("ID"),
-            "created":    j.get("CreatedSince") or j.get("CreatedAt"),
-            "size":       j.get("Size"),
-        })
+        cols = _split_by_offsets(line_rstripped, col_offsets)
 
-    if images:
-        return images
-
-    # 2) Fallback table mode
-    lines = text.splitlines()
-    if not lines or "REPOSITORY" not in lines[0].upper():
-        return []
-
-    for line in lines[1:]:
-        line = line.strip()
-        if not line:
+        repository = cols.get("REPOSITORY", "").strip()
+        if not repository:
             continue
 
-        cols = re.split(r"\s{2,}", line)
-        # REPOSITORY TAG IMAGE ID CREATED SIZE
-        if len(cols) < 5:
-            continue
-
-        repository, tag, image_id, created, size = cols[:5]
         images.append({
             "repository": repository,
-            "tag": tag,
-            "image_id": image_id,
-            "created": created,
-            "size": size,
+            "tag":        cols.get("TAG",      "").strip(),
+            "image_id":   cols.get("IMAGE ID", "").strip(),
+            "created":    cols.get("CREATED",  "").strip(),
+            "size":       cols.get("SIZE",     "").strip(),
         })
 
+    logger.debug("[PARSER] docker images: parsed %d images", len(images))
     return images
 
 
@@ -441,19 +481,3 @@ def parse_lsusb(text: str) -> list[str]:
         if line.startswith("Bus "):
             devices.append(line)
     return devices
-
-
-def parse_ip_neigh_gateway_mac(text: str) -> Optional[str]:
-    """
-    Parse output of: ip neigh show <gateway_ip> [dev <iface>]
-    Example:
-        192.168.234.1 dev LAN lladdr dc:f5:1b:6d:f5:d0 STALE
-    Returns:
-        "DC:F5:1B:6D:F5:D0" or None
-    """
-    text = clean(text)
-    if not text:
-        return None
-
-    m = re.search(r"\blladdr\s+([0-9a-f]{2}(?::[0-9a-f]{2}){5})\b", text, re.IGNORECASE)
-    return m.group(1).upper() if m else None

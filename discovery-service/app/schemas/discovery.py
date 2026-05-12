@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -38,3 +38,10 @@ class TriggerResponse(BaseModel):
     run_id: int
     status: str
     message: str
+
+
+# ✅ NEW
+class MiniDiscoveryHgwUpdateRequest(BaseModel):
+    via_rpi_ips: List[str] = []
+    instance_key: Optional[str] = None
+    hgw_ip: Optional[str] = None

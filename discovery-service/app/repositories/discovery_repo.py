@@ -37,6 +37,37 @@ class DiscoveryRepository:
                     setattr(run, k, v)
             self.db.commit()
 
+    # ✅ NEW: mini-update (ne touche pas aux compteurs)
+    def mark_run_running(self, run_id: int, message: Optional[str] = None) -> None:
+        run = self.db.query(DiscoveryRun).filter(DiscoveryRun.id == run_id).first()
+        if not run:
+            return
+        run.status = "running"
+        run.finished_at = None
+        if message is not None:
+            run.message = message
+        self.db.commit()
+
+    # ✅ NEW: mini-update (ne touche pas aux compteurs)
+    def mark_run_finished_simple(self, run_id: int, status: str, message: Optional[str] = None) -> None:
+        run = self.db.query(DiscoveryRun).filter(DiscoveryRun.id == run_id).first()
+        if not run:
+            return
+        run.status = status
+        run.finished_at = datetime.utcnow()
+        if message is not None:
+            run.message = message
+        self.db.commit()
+
+    # ✅ NEW: status global basé sur présence d’erreurs
+    def compute_status_from_errors(self, run_id: int) -> str:
+        cnt = (
+            self.db.query(DeviceError)
+            .filter(DeviceError.run_id == run_id)
+            .count()
+        )
+        return "done" if cnt == 0 else "partial"
+
     def get_run(self, run_id: int) -> Optional[DiscoveryRun]:
         return self.db.query(DiscoveryRun).filter(DiscoveryRun.id == run_id).first()
 
@@ -94,3 +125,15 @@ class DiscoveryRepository:
             .order_by(DeviceError.id)
             .all()
         )
+
+    # ✅ NEW: supprimer erreurs d’un device (si repasse OK)
+    def clear_device_errors(self, run_id: int, device_type: str, device_ip: str) -> int:
+        q = (
+            self.db.query(DeviceError)
+            .filter(DeviceError.run_id == run_id)
+            .filter(DeviceError.device_type == device_type)
+            .filter(DeviceError.device_ip == str(device_ip))
+        )
+        deleted = q.delete(synchronize_session=False)
+        self.db.commit()
+        return deleted

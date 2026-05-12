@@ -66,6 +66,24 @@ const RPisPage = () => {
   /* terminal */
   const [terminalTarget, setTerminalTarget] = useState(null)
 
+  /* ✅ active terminal sessions (attached>0) */
+  const [activeRpiIps, setActiveRpiIps] = useState(() => new Set())
+
+  const fetchActiveRpiSessions = useCallback(async () => {
+    try {
+      const res = await rpisApi.terminalSessionsAll()
+      const sessions = res.data?.data || []
+      const active = new Set(
+        sessions
+          .filter((s) => s.device_type === 'rpi' && s.status === 'ready' && (s.attached || 0) > 0)
+          .map((s) => s.target) // target = ip_mgmt
+      )
+      setActiveRpiIps(active)
+    } catch {
+      setActiveRpiIps(new Set())
+    }
+  }, [])
+
   const fetchRpis = useCallback(async () => {
     setLoading(true)
     try {
@@ -98,7 +116,6 @@ const RPisPage = () => {
         setTotalPages(1)
         setPage(1)
       } else {
-        const PAGE_SIZE = 25
         const res = await rpisApi.list({ ...baseParams, page, page_size: PAGE_SIZE })
         setData(res.data.data || [])
         setTotal(res.data.total || 0)
@@ -108,15 +125,23 @@ const RPisPage = () => {
       console.error(e)
     } finally {
       setLoading(false)
+      // ✅ refresh active session markers
+      fetchActiveRpiSessions()
     }
-  }, [page, search, filterSsh, filterCreds, viewMode])
+  }, [page, search, filterSsh, filterCreds, viewMode, fetchActiveRpiSessions])
 
   useEffect(() => {
     fetchRpis()
   }, [fetchRpis])
 
-  const handleSearch     = (val) => { setSearch(val);      setPage(1) }
-  const handleSshFilter  = (val) => { setFilterSsh(val);   setPage(1) }
+  // optional: refresh active markers every 20s
+  useEffect(() => {
+    const t = setInterval(() => fetchActiveRpiSessions(), 20000)
+    return () => clearInterval(t)
+  }, [fetchActiveRpiSessions])
+
+  const handleSearch = (val) => { setSearch(val); setPage(1) }
+  const handleSshFilter = (val) => { setFilterSsh(val); setPage(1) }
   const handleCredsFilter = (val) => { setFilterCreds(val); setPage(1) }
 
   const handleDeleteCreds = async (ip) => {
@@ -139,7 +164,7 @@ const RPisPage = () => {
 
     try {
       const res = await rpisApi.reconnect(ip)
-      const ok  = res?.data?.success !== false
+      const ok = res?.data?.success !== false
       const msg = res?.data?.message || (ok ? 'Reconnect succeeded' : 'Reconnect failed')
       notify(ok ? 'success' : 'error', msg)
       fetchRpis()
@@ -153,7 +178,6 @@ const RPisPage = () => {
 
   /* ── Step 1 : open confirm modal (with normalized port) ── */
   const handleRebootRequest = (row) => {
-    // ✅ Normalisation du switch_port : retire "g", "Gi", espaces, etc. → "11"
     const rawPort = row?.switch_port
     const normalizedPort = rawPort
       ? String(rawPort).trim().replace(/^g/i, '').replace(/[^0-9]/g, '')
@@ -164,26 +188,24 @@ const RPisPage = () => {
       return
     }
 
-    // On stocke la row + le port normalisé dans le state du modal
     setRebootTarget({ ...row, _normalizedPort: normalizedPort })
   }
 
   /* ── Step 2 : user confirmed → execute reboot ── */
   const handleRebootConfirm = async () => {
     const row = rebootTarget
-    setRebootTarget(null) // close modal immediately
+    setRebootTarget(null)
 
     const ip = row?.ip_mgmt
-    const port = row?._normalizedPort // ✅ port normalisé
+    const port = row?._normalizedPort
     if (!ip || !port) return
 
     setRebootingIp(ip)
     notify('info', `Rebooting RPi ${ip} via PoE cycle (port ${port})...`)
 
     try {
-      // ⬇️ On envoie au backend le port normalisé (ex: "11")
       const res = await rpisApi.reboot(ip, { port })
-      const ok  = res?.data?.success !== false
+      const ok = res?.data?.success !== false
       const msg = res?.data?.message || (ok ? 'Reboot succeeded' : 'Reboot failed')
       notify(ok ? 'success' : 'error', msg)
       fetchRpis()
@@ -199,16 +221,28 @@ const RPisPage = () => {
 
   const displayData = useMemo(() => {
     const arr = [...data]
-    if (sortBy === 'ip') {
-      arr.sort((a, b) => (a.ip_mgmt || '').localeCompare(b.ip_mgmt || ''))
-    } else if (sortBy === 'last_seen') {
-      arr.sort((a, b) => new Date(b.last_seen || 0) - new Date(a.last_seen || 0))
-    } else if (sortBy === 'ssh_failed_first') {
-      const rank = (v) => (v === false ? 0 : v === true ? 1 : 2)
-      arr.sort((a, b) => rank(a.last_ssh_success) - rank(b.last_ssh_success))
-    }
+    const isActive = (row) => activeRpiIps.has(row.ip_mgmt)
+
+    arr.sort((a, b) => {
+      // ✅ active sessions first
+      const ar = isActive(a) ? 0 : 1
+      const br = isActive(b) ? 0 : 1
+      if (ar !== br) return ar - br
+
+      // then normal sort
+      if (sortBy === 'ip') {
+        return (a.ip_mgmt || '').localeCompare(b.ip_mgmt || '')
+      } else if (sortBy === 'last_seen') {
+        return new Date(b.last_seen || 0) - new Date(a.last_seen || 0)
+      } else if (sortBy === 'ssh_failed_first') {
+        const rank = (v) => (v === false ? 0 : v === true ? 1 : 2)
+        return rank(a.last_ssh_success) - rank(b.last_ssh_success)
+      }
+      return 0
+    })
+
     return arr
-  }, [data, sortBy])
+  }, [data, sortBy, activeRpiIps])
 
   const columns = [
     {
@@ -217,13 +251,15 @@ const RPisPage = () => {
       width: 140,
       render: (val, row) => {
         const busy = reconnectingIp === row.ip_mgmt || rebootingIp === row.ip_mgmt
+        const active = activeRpiIps.has(row.ip_mgmt)
+
         return (
           <button
             type="button"
-            className="rpi-table__ip rpi-table__ip--clickable"
+            className={`rpi-table__ip rpi-table__ip--clickable ${active ? 'rpi-table__ip--active' : ''}`}
             onClick={() => setTerminalTarget(row)}
             disabled={busy}
-            title="Open terminal"
+            title={active ? 'Terminal active (attached)' : 'Open terminal'}
             style={{
               background: 'none',
               border: 'none',
@@ -241,21 +277,13 @@ const RPisPage = () => {
       key: 'mac',
       title: 'MAC Address',
       render: (val) =>
-        val ? (
-          <span className="rpi-table__mono">{val}</span>
-        ) : (
-          <span className="rpi-table__null">—</span>
-        ),
+        val ? <span className="rpi-table__mono">{val}</span> : <span className="rpi-table__null">—</span>,
     },
     {
       key: 'label',
       title: 'Label',
       render: (val) =>
-        val ? (
-          <span className="rpi-table__label">{val}</span>
-        ) : (
-          <span className="rpi-table__null">—</span>
-        ),
+        val ? <span className="rpi-table__label">{val}</span> : <span className="rpi-table__null">—</span>,
     },
     {
       key: 'switch_ip',
@@ -264,9 +292,7 @@ const RPisPage = () => {
         val ? (
           <div className="rpi-table__switch">
             <span className="rpi-table__mono">{val}</span>
-            {row.switch_port && (
-              <span className="rpi-table__port">:{row.switch_port}</span>
-            )}
+            {row.switch_port && <span className="rpi-table__port">:{row.switch_port}</span>}
           </div>
         ) : (
           <span className="rpi-table__null">—</span>
@@ -276,23 +302,13 @@ const RPisPage = () => {
       key: 'hgw_ip',
       title: 'Home Gateway',
       render: (val) =>
-        val ? (
-          <span className="rpi-table__mono rpi-table__mono--cyan">{val}</span>
-        ) : (
-          <span className="rpi-table__null">—</span>
-        ),
+        val ? <span className="rpi-table__mono rpi-table__mono--cyan">{val}</span> : <span className="rpi-table__null">—</span>,
     },
     {
       key: 'last_seen',
       title: 'Last Seen',
       render: (val) =>
-        val ? (
-          <span className="rpi-table__time">
-            {dayjs(val).format('MMM D, HH:mm')}
-          </span>
-        ) : (
-          <span className="rpi-table__null">—</span>
-        ),
+        val ? <span className="rpi-table__time">{dayjs(val).format('MMM D, HH:mm')}</span> : <span className="rpi-table__null">—</span>,
     },
     {
       key: 'last_ssh_success',
@@ -319,12 +335,7 @@ const RPisPage = () => {
       title: 'Custom Creds',
       width: 110,
       align: 'center',
-      render: (val) =>
-        val ? (
-          <StatusBadge status={'active'} />
-        ) : (
-          <StatusBadge status={'disabled'} />
-        ),
+      render: (val) => (val ? <StatusBadge status={'active'} /> : <StatusBadge status={'disabled'} />),
     },
     {
       key: 'actions',
@@ -333,12 +344,11 @@ const RPisPage = () => {
       align: 'right',
       render: (_, row) => {
         const reconnecting = reconnectingIp === row.ip_mgmt
-        const rebooting    = rebootingIp    === row.ip_mgmt
-        const busy         = reconnecting || rebooting
+        const rebooting = rebootingIp === row.ip_mgmt
+        const busy = reconnecting || rebooting
 
         return (
           <div className="rpi-table__actions">
-            {/* View details */}
             <button
               className="rpi-table__action-btn rpi-table__action-btn--view"
               title="View details"
@@ -348,7 +358,6 @@ const RPisPage = () => {
               <Eye size={15} />
             </button>
 
-            {/* Manage credentials */}
             <button
               className="rpi-table__action-btn rpi-table__action-btn--cred"
               title="Manage credentials"
@@ -358,35 +367,24 @@ const RPisPage = () => {
               <KeyRound size={15} />
             </button>
 
-            {/* Reconnect */}
             <button
               className="rpi-table__action-btn rpi-table__action-btn--reconnect"
               title={reconnecting ? 'Reconnecting...' : 'Reconnect'}
               onClick={() => handleReconnect(row)}
               disabled={busy}
             >
-              {reconnecting ? (
-                <RefreshCw size={15} className="spin" />
-              ) : (
-                <Link2 size={15} />
-              )}
+              {reconnecting ? <RefreshCw size={15} className="spin" /> : <Link2 size={15} />}
             </button>
 
-            {/* Reboot via PoE cycle */}
             <button
               className="rpi-table__action-btn rpi-table__action-btn--reboot"
               title={rebooting ? 'Rebooting...' : 'Reboot via PoE cycle'}
               onClick={() => handleRebootRequest(row)}
               disabled={busy}
             >
-              {rebooting ? (
-                <RefreshCw size={15} className="spin" />
-              ) : (
-                <PowerOff size={15} />
-              )}
+              {rebooting ? <RefreshCw size={15} className="spin" /> : <PowerOff size={15} />}
             </button>
 
-            {/* Delete custom credentials */}
             {row.has_custom_credentials && (
               <button
                 className="rpi-table__action-btn rpi-table__action-btn--delete"
@@ -403,13 +401,12 @@ const RPisPage = () => {
     },
   ]
 
-  const sshOk       = data.filter((r) => r.last_ssh_success === true).length
-  const sshFail     = data.filter((r) => r.last_ssh_success === false).length
+  const sshOk = data.filter((r) => r.last_ssh_success === true).length
+  const sshFail = data.filter((r) => r.last_ssh_success === false).length
   const customCreds = data.filter((r) => r.has_custom_credentials).length
 
   return (
     <div className="rpis-page">
-      {/* ── Header ── */}
       <div className="page-header">
         <div>
           <h2 className="page-title">Raspberry Pi Devices</h2>
@@ -442,7 +439,6 @@ const RPisPage = () => {
         </div>
       </div>
 
-      {/* ── Summary strip ── */}
       <div className="rpis-page__summary">
         <div className="rpis-page__summary-item rpis-page__summary-item--total">
           <Cpu size={16} />
@@ -469,24 +465,13 @@ const RPisPage = () => {
         </div>
       </div>
 
-      {/* ── Main Card ── */}
       <Card padding={false}>
-        {/* Filters */}
         <div className="rpis-page__filters">
-          <SearchBar
-            value={search}
-            onChange={handleSearch}
-            placeholder="Search by IP, MAC, label..."
-            width={300}
-          />
+          <SearchBar value={search} onChange={handleSearch} placeholder="Search by IP, MAC, label..." width={300} />
           <div className="rpis-page__filter-row">
             <div className="rpis-page__filter-group">
               <label className="rpis-page__filter-label">SSH Status</label>
-              <select
-                className="rpis-page__select"
-                value={filterSsh}
-                onChange={(e) => handleSshFilter(e.target.value)}
-              >
+              <select className="rpis-page__select" value={filterSsh} onChange={(e) => handleSshFilter(e.target.value)}>
                 <option value="">All</option>
                 <option value="true">Success</option>
                 <option value="false">Failed</option>
@@ -495,11 +480,7 @@ const RPisPage = () => {
 
             <div className="rpis-page__filter-group">
               <label className="rpis-page__filter-label">Credentials</label>
-              <select
-                className="rpis-page__select"
-                value={filterCreds}
-                onChange={(e) => handleCredsFilter(e.target.value)}
-              >
+              <select className="rpis-page__select" value={filterCreds} onChange={(e) => handleCredsFilter(e.target.value)}>
                 <option value="">All</option>
                 <option value="true">Custom</option>
                 <option value="false">Default</option>
@@ -509,11 +490,7 @@ const RPisPage = () => {
             {viewMode === 'table' && (
               <div className="rpis-page__filter-group">
                 <label className="rpis-page__filter-label">Sort</label>
-                <select
-                  className="rpis-page__select"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                >
+                <select className="rpis-page__select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
                   <option value="ip">IP (A→Z)</option>
                   <option value="last_seen">Last seen (newest)</option>
                   <option value="ssh_failed_first">SSH failed first</option>
@@ -523,25 +500,13 @@ const RPisPage = () => {
           </div>
         </div>
 
-        {/* Content */}
         {loading ? (
           <Spinner centered text="Loading RPis..." />
         ) : viewMode === 'table' ? (
           <>
-            <Table
-              columns={columns}
-              data={displayData}
-              rowKey="id"
-              emptyText="No RPi devices found"
-            />
+            <Table columns={columns} data={displayData} rowKey="id" emptyText="No RPi devices found" />
             {total > 0 && (
-              <Pagination
-                page={page}
-                totalPages={totalPages}
-                total={total}
-                pageSize={PAGE_SIZE}
-                onChange={setPage}
-              />
+              <Pagination page={page} totalPages={totalPages} total={total} pageSize={PAGE_SIZE} onChange={setPage} />
             )}
           </>
         ) : (
@@ -559,12 +524,7 @@ const RPisPage = () => {
         )}
       </Card>
 
-      {/* ── Modals ── */}
-      <RpiDetailModal
-        open={!!detailTarget}
-        onClose={() => setDetailTarget(null)}
-        rpiData={detailTarget}
-      />
+      <RpiDetailModal open={!!detailTarget} onClose={() => setDetailTarget(null)} rpiData={detailTarget} />
 
       <CredentialModal
         open={!!credTarget}
@@ -590,7 +550,6 @@ const RPisPage = () => {
         autoStart={true}
       />
 
-      {/* ── Reboot confirm modal ── */}
       <RebootConfirmModal
         open={!!rebootTarget}
         ip={rebootTarget?.ip_mgmt || ''}

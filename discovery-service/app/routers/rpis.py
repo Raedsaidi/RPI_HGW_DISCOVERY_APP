@@ -1,65 +1,41 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
-from sqlalchemy import or_ ,func
+from sqlalchemy import or_, func
 from typing import Optional
-from fastapi import WebSocket, WebSocketDisconnect
-import asyncio, json
+import asyncio
+import json
+
 from app.services.terminal_manager import terminal_manager, decode_jwt_user
-
-
 from app.core.db import get_db
 from app.core.security import require_read_access, require_write_access
 from app.repositories.rpi_repo import RpiRepository
-from app.schemas.rpi import RpiRead, RpiCredentialSubmit, RpiFactRead
-from app.services.rpi_reboot_service import RpiRebootService  
+from app.schemas.rpi import RpiCredentialSubmit
+from app.services.rpi_reboot_service import RpiRebootService
 from app.models.rpi import Rpi, RpiFact
+from app.services.reconnect_service import ReconnectService
 
 router = APIRouter(prefix="/api/v1/rpis", tags=["RPis"])
 
 
 @router.get("")
 def list_rpis(
-    # Recherche
-    search: Optional[str] = Query(
-        None, description="Search by IP, MAC, hostname or label"
-    ),
-    # Filtres
+    search: Optional[str] = Query(None, description="Search by IP, MAC, hostname or label"),
     switch_ip: Optional[str] = Query(None, description="Filter by switch IP"),
-    # ── MODIFICATION : description mise à jour ──
-    hgw_ip: Optional[str] = Query(
-        None, description="Filter by HGW IP (gateway address from ip r s)"
-    ),
-    ssh_success: Optional[bool] = Query(
-        None, description="Filter by SSH success status"
-    ),
-    has_custom_creds: Optional[bool] = Query(
-        None, description="Filter RPis with custom credentials"
-    ),
+    hgw_ip: Optional[str] = Query(None, description="Filter by HGW IP (gateway address from ip r s)"),
+    ssh_success: Optional[bool] = Query(None, description="Filter by SSH success status"),
+    has_custom_creds: Optional[bool] = Query(None, description="Filter RPis with custom credentials"),
     label: Optional[str] = Query(None, description="Filter by label/group"),
-    # Pagination
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_read_access),
 ):
-    """
-    List all RPis (success and failed).
-    Frontend uses this to show all RPis and submit custom credentials for failed ones.
-    """
     q = db.query(Rpi)
 
-    # Search
     if search:
         pattern = f"%{search}%"
-        q = q.filter(
-            or_(
-                Rpi.ip_mgmt.ilike(pattern),
-                Rpi.mac.ilike(pattern),
-                Rpi.label.ilike(pattern),
-            )
-        )
+        q = q.filter(or_(Rpi.ip_mgmt.ilike(pattern), Rpi.mac.ilike(pattern), Rpi.label.ilike(pattern)))
 
-    # Filters
     if switch_ip:
         q = q.filter(Rpi.switch_ip == switch_ip)
 
@@ -78,7 +54,6 @@ def list_rpis(
     if label:
         q = q.filter(Rpi.label.ilike(f"%{label}%"))
 
-    # Total
     total = q.count()
     total_pages = max((total + page_size - 1) // page_size, 1)
 
@@ -93,27 +68,33 @@ def list_rpis(
 
     result = []
     for rpi in rpis:
-        result.append({
-            "id": rpi.id,
-            "mac": rpi.mac,
-            "ip_mgmt": rpi.ip_mgmt,
-            "label": rpi.label,
-            "switch_ip": rpi.switch_ip,
-            "switch_port": rpi.switch_port,
-            "hgw_ip": rpi.hgw_ip,
-            "last_seen": rpi.last_seen,
-            "last_ssh_success": rpi.last_ssh_success,
-            "last_ssh_error": rpi.last_ssh_error,
-            "has_custom_credentials": bool(rpi.custom_ssh_user),
-        })
+        result.append(
+            {
+                "id": rpi.id,
+                "mac": rpi.mac,
+                "ip_mgmt": rpi.ip_mgmt,
+                "label": rpi.label,
+                "switch_ip": rpi.switch_ip,
+                "switch_port": rpi.switch_port,
+                "hgw_ip": rpi.hgw_ip,
+                "last_seen": rpi.last_seen,
+                "last_ssh_success": rpi.last_ssh_success,
+                "last_ssh_error": rpi.last_ssh_error,
+                "has_custom_credentials": bool(rpi.custom_ssh_user),
+            }
+        )
 
-    return {
-        "data": result,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": total_pages,
-    }
+    return {"data": result, "total": total, "page": page, "page_size": page_size, "total_pages": total_pages}
+
+
+# ✅ NEW: list ALL RPi terminal sessions for current user (used by RPisPage to highlight active)
+@router.get("/terminal/sessions")
+def list_all_rpi_terminal_sessions(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_write_access),
+):
+    username = current_user["username"] if isinstance(current_user, dict) else current_user.username
+    return {"data": terminal_manager.list_user_sessions(username, device_type="rpi")}
 
 
 @router.get("/{ip_mgmt}")
@@ -122,7 +103,6 @@ def get_rpi(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_read_access),
 ):
-    """Get details for a specific RPi."""
     rpi = RpiRepository(db).get_by_ip(ip_mgmt)
     if not rpi:
         raise HTTPException(status_code=404, detail="RPi not found.")
@@ -138,7 +118,6 @@ def get_rpi_facts(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_read_access),
 ):
-    """Get historical facts/metrics for a specific RPi."""
     q = db.query(RpiFact).filter(RpiFact.rpi_ip_mgmt == ip_mgmt)
 
     if run_id:
@@ -154,13 +133,7 @@ def get_rpi_facts(
         .all()
     )
 
-    return {
-        "data": facts,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": total_pages,
-    }
+    return {"data": facts, "total": total, "page": page, "page_size": page_size, "total_pages": total_pages}
 
 
 @router.post("/credentials", status_code=200)
@@ -169,15 +142,6 @@ def submit_rpi_credentials(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_write_access),
 ):
-    """
-    Submit custom SSH credentials for a RPi that failed authentication.
-    Will be used in the next discovery run.
-
-    Credentials priority:
-      1. Custom (from this endpoint)
-      2. Default (pi/raspberry)
-      3. Fallback (root/sah)
-    """
     repo = RpiRepository(db)
     rpi = repo.get_by_ip(body.rpi_ip_mgmt)
     if not rpi:
@@ -204,10 +168,6 @@ def delete_rpi_credentials(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_write_access),
 ):
-    """
-    Remove custom credentials.
-    RPi will use default (pi/raspberry) then fallback (root/sah).
-    """
     repo = RpiRepository(db)
     rpi = repo.get_by_ip(ip_mgmt)
     if not rpi:
@@ -225,8 +185,6 @@ def delete_rpi_credentials(
     }
 
 
-from app.services.reconnect_service import ReconnectService
-
 @router.post("/{ip_mgmt}/reconnect")
 def reconnect_rpi(
     ip_mgmt: str,
@@ -239,9 +197,11 @@ def reconnect_rpi(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"RPi reconnect failed: {e}")
-    
 
 
+# ─────────────────────────────────────────────────────────────
+# TERMINAL
+# ─────────────────────────────────────────────────────────────
 @router.post("/{ip_mgmt}/terminal/open")
 def open_rpi_terminal(
     ip_mgmt: str,
@@ -255,6 +215,7 @@ def open_rpi_terminal(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
 @router.get("/{ip_mgmt}/terminal/sessions")
 def list_rpi_terminal_sessions(
     ip_mgmt: str,
@@ -263,6 +224,7 @@ def list_rpi_terminal_sessions(
 ):
     username = current_user["username"] if isinstance(current_user, dict) else current_user.username
     return {"data": terminal_manager.list_user_sessions(username, device_type="rpi", target=ip_mgmt)}
+
 
 @router.post("/terminal/{session_id}/close")
 def close_rpi_terminal_session(
@@ -279,11 +241,11 @@ def close_rpi_terminal_session(
     terminal_manager.force_close(session_id)
     return {"message": "Session closed"}
 
+
 @router.websocket("/terminal/{session_id}/ws")
 async def rpi_terminal_ws(websocket: WebSocket, session_id: str):
     await websocket.accept()
 
-    # auth first message
     try:
         raw = await asyncio.wait_for(websocket.receive_text(), timeout=10)
         msg = json.loads(raw)
@@ -298,10 +260,10 @@ async def rpi_terminal_ws(websocket: WebSocket, session_id: str):
 
     sess = terminal_manager.get(session_id)
     if not sess:
-        await websocket.send_text(json.dumps({"type":"status","status":"error","error":"Session not found"}))
+        await websocket.send_text(json.dumps({"type": "status", "status": "error", "error": "Session not found"}))
         await websocket.close(code=1008)
         return
-    if sess.owner != username:
+    if sess.owner != username or sess.device_type != "rpi":
         await websocket.close(code=1008)
         return
 
@@ -309,10 +271,19 @@ async def rpi_terminal_ws(websocket: WebSocket, session_id: str):
         sess.add_client(websocket)
         sess.start_reader(asyncio.get_running_loop())
         await sess.send_buffer(websocket)
-        await websocket.send_text(json.dumps({"type":"status","status":sess.status,"error":sess.error}, ensure_ascii=False))
+        await websocket.send_text(
+            json.dumps({"type": "status", "status": sess.status, "error": sess.error}, ensure_ascii=False)
+        )
 
         while True:
-            raw_in = await websocket.receive_text()
+            try:
+                raw_in = await asyncio.wait_for(websocket.receive_text(), timeout=30)
+            except asyncio.TimeoutError:
+                if sess.status in ("closed", "error"):
+                    await websocket.close(code=1000)
+                    return
+                continue
+
             try:
                 m = json.loads(raw_in)
             except Exception:
@@ -324,10 +295,11 @@ async def rpi_terminal_ws(websocket: WebSocket, session_id: str):
             elif t == "resize":
                 sess.resize(int(m.get("cols", 220)), int(m.get("rows", 60)))
             elif t == "ping":
-                await websocket.send_text(json.dumps({"type":"pong"}))
+                sess.touch_seen()
+                await websocket.send_text(json.dumps({"type": "pong"}))
             elif t == "close":
                 terminal_manager.force_close(session_id)
-                await websocket.close()
+                await websocket.close(code=1000)
                 return
 
     except WebSocketDisconnect:
@@ -339,26 +311,12 @@ async def rpi_terminal_ws(websocket: WebSocket, session_id: str):
             pass
 
 
-
-    
-
-
 @router.post("/{ip_mgmt}/reboot")
 def reboot_rpi(
     ip_mgmt: str,
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_write_access),
 ):
-    """
-    Hard-reboot a RPi by cycling its PoE port on the parent switch.
-
-    Steps performed:
-      1. Telnet to the switch (via bastion).
-      2. Shutdown interface + disable PoE  →  wait ~4 s.
-      3. No shutdown + re-enable PoE.
-      4. Poll TCP/22 on the RPi until it responds (up to 120 s).
-      5. Update last_seen / last_ssh_success in DB.
-    """
     try:
         return RpiRebootService(db).reboot_rpi(ip_mgmt)
     except ValueError as e:

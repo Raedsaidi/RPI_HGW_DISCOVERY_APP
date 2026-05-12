@@ -41,6 +41,8 @@ class RpiFactRead(BaseModel):
     disk_total_gb: Optional[str]
     disk_used_pct: Optional[str]
     docker_available: Optional[bool]
+    docker_images: Optional[str]
+    docker_containers: Optional[str]
     lan_iface: Optional[str]
     lan_ip: Optional[str]
     hgw_ip: Optional[str]

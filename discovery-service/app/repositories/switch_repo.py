@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from sqlalchemy.orm import Session
+
 from app.models.switch import Switch, SwitchFact, SwitchMacEntry
 from app.infrastructure.netgear_client import SwitchCollectedData
 
@@ -65,7 +66,6 @@ class SwitchRepository:
         info = data.info
         cpu = data.cpu
 
-        # Update Switch last_seen
         sw = self.get_by_ip(switch_ip)
         if sw:
             sw.last_seen = datetime.utcnow()
@@ -107,7 +107,7 @@ class SwitchRepository:
             run_id=run_id,
             switch_ip=switch_ip,
             vid=entry.vid,
-            mac=entry.mac,
+            mac=(entry.mac or "").upper(),  # ✅ normalize
             entry_type=entry.entry_type,
             port=entry.port,
             raw_line=entry.raw_line,
@@ -129,3 +129,14 @@ class SwitchRepository:
             .order_by(SwitchFact.id.desc())
             .first()
         )
+
+    # ✅ NEW: pour mini-update (replace MAC table)
+    def delete_mac_entries_for_run_switch(self, run_id: int, switch_ip: str) -> int:
+        q = (
+            self.db.query(SwitchMacEntry)
+            .filter(SwitchMacEntry.run_id == run_id)
+            .filter(SwitchMacEntry.switch_ip == switch_ip)
+        )
+        deleted = q.delete(synchronize_session=False)
+        self.db.commit()
+        return deleted

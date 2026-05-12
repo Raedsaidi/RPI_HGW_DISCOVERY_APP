@@ -184,23 +184,28 @@ class RpiClient:
         # PS
         ok_ps, ps_raw = self.session.execute("ps aux 2>/dev/null", timeout=15)
         scripts, python_procs = parse_ps_scripts(ps_raw) if ok_ps else ([], [])
-
         # ── Docker (ROBUST) ─────────────────────────────────────────
         docker_avail = False
         containers = []
         images = []
 
-        # 1) check docker binary existence (fast)
+        # 1) Vérifier que docker existe
         ok_docker_bin, docker_bin_raw = self.session.execute(
             "command -v docker >/dev/null 2>&1 && echo ok || echo missing",
             timeout=5,
         )
 
         if ok_docker_bin and "ok" in (docker_bin_raw or "").lower():
-            # 2) collect containers in JSON-lines mode (capture stderr!)
+
+            # 2) Containers — format table natif
             ok_dps, dps_raw = self.session.execute(
-                r"docker ps -a --no-trunc --format '{{json .}}' 2>&1",
+                "docker ps -a 2>&1",
                 timeout=20,
+            )
+
+            logger.debug(
+                "[RPI] %s: docker ps raw (ok=%s):\n%s",
+                ip_mgmt, ok_dps, (dps_raw or "")[:500],
             )
 
             if ok_dps:
@@ -208,19 +213,24 @@ class RpiClient:
                 docker_avail = docker_usable
 
                 if docker_avail:
+                    # 3) Images — format table natif
                     ok_img, img_raw = self.session.execute(
-                        r"docker images --no-trunc --format '{{json .}}' 2>&1",
+                        "docker images 2>&1",
                         timeout=20,
                     )
+
+                    logger.debug(
+                        "[RPI] %s: docker images raw (ok=%s):\n%s",
+                        ip_mgmt, ok_img, (img_raw or "")[:500],
+                    )
+
                     if ok_img:
                         images = parse_docker_images(img_raw)
-            else:
-                docker_avail = False
 
-            logger.info(
-                "[RPI] %s: Docker available=%s → %d containers, %d images",
-                ip_mgmt, docker_avail, len(containers), len(images),
-            )
+        logger.info(
+            "[RPI] %s: Docker available=%s → %d containers, %d images",
+            ip_mgmt, docker_avail, len(containers), len(images),
+        )
 
         # USB
         ok_usb, usb_raw = self.session.execute("lsusb 2>/dev/null || echo ''", timeout=10)

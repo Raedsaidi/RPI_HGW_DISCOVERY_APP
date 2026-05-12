@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocketDisconnect, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 import asyncio
 import json
 from sqlalchemy.orm import Session
@@ -11,26 +11,22 @@ from app.repositories.switch_repo import SwitchRepository
 from app.schemas.switch import SwitchCreate, SwitchListResponse, SwitchUpdate, SwitchRead
 from app.models.switch import Switch
 from app.services.terminal_manager import terminal_manager, decode_jwt_user
+from app.services.reconnect_service import ReconnectService
 
 router = APIRouter(prefix="/api/v1/switches", tags=["Switches"])
 
 
 @router.get("", response_model=SwitchListResponse)
 def list_switches(
-    # Recherche
     search: Optional[str] = Query(None, description="Search by IP or name"),
-    # Filtres
     enabled: Optional[bool] = Query(None, description="Filter by enabled status"),
-    # Pagination
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_read_access),
 ):
-    """List all switches with search, filter and pagination."""
     q = db.query(Switch)
 
-    # Search
     if search:
         pattern = f"%{search}%"
         q = q.filter(
@@ -42,15 +38,12 @@ def list_switches(
             )
         )
 
-    # Filters
     if enabled is not None:
         q = q.filter(Switch.enabled == enabled)
 
-    # Total count
     total = q.count()
     total_pages = max((total + page_size - 1) // page_size, 1)
 
-    # Pagination
     switches = (
         q.order_by(Switch.ip.asc())
         .offset((page - 1) * page_size)
@@ -58,13 +51,7 @@ def list_switches(
         .all()
     )
 
-    return {
-        "data": switches,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": total_pages,
-    }
+    return {"data": switches, "total": total, "page": page, "page_size": page_size, "total_pages": total_pages}
 
 
 @router.post("", response_model=SwitchRead, status_code=201)
@@ -128,8 +115,8 @@ def get_switch_rpis(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_read_access),
 ):
-    """Get RPis last seen on this switch."""
     from app.repositories.rpi_repo import RpiRepository
+
     sw = SwitchRepository(db).get_by_id(switch_id)
     if not sw:
         raise HTTPException(status_code=404, detail="Switch not found.")
@@ -145,8 +132,6 @@ def get_switch_macs(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_read_access),
 ):
-    """Get MAC entries seen on this switch."""
-    from app.repositories.switch_repo import SwitchRepository
     from app.repositories.discovery_repo import DiscoveryRepository
     from app.models.switch import SwitchMacEntry
 
@@ -154,7 +139,6 @@ def get_switch_macs(
     if not sw:
         raise HTTPException(status_code=404, detail="Switch not found.")
 
-    # Get latest run_id if not provided
     if run_id is None:
         runs = DiscoveryRepository(db).list_runs(skip=0, limit=1)
         if not runs:
@@ -172,8 +156,6 @@ def get_switch_macs(
     return q.order_by(SwitchMacEntry.port).all()
 
 
-from app.services.reconnect_service import ReconnectService
-
 @router.post("/{switch_id}/reconnect")
 def reconnect_switch(
     switch_id: int,
@@ -186,9 +168,11 @@ def reconnect_switch(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Switch reconnect failed: {e}")
-    
 
 
+# ─────────────────────────────────────────────────────────────
+# TERMINAL
+# ─────────────────────────────────────────────────────────────
 @router.post("/{switch_id}/terminal/open")
 def open_switch_terminal(
     switch_id: int,
@@ -202,6 +186,7 @@ def open_switch_terminal(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
 @router.get("/{switch_id}/terminal/sessions")
 def list_switch_terminal_sessions(
     switch_id: int,
@@ -210,6 +195,7 @@ def list_switch_terminal_sessions(
 ):
     username = current_user["username"] if isinstance(current_user, dict) else current_user.username
     return {"data": terminal_manager.list_user_sessions(username, device_type="switch", target=str(switch_id))}
+
 
 @router.post("/terminal/{session_id}/close")
 def close_switch_terminal_session(
@@ -225,6 +211,7 @@ def close_switch_terminal_session(
         raise HTTPException(status_code=403, detail="Not allowed")
     terminal_manager.force_close(session_id)
     return {"message": "Session closed"}
+
 
 @router.websocket("/terminal/{session_id}/ws")
 async def switch_terminal_ws(websocket: WebSocket, session_id: str):
@@ -244,10 +231,10 @@ async def switch_terminal_ws(websocket: WebSocket, session_id: str):
 
     sess = terminal_manager.get(session_id)
     if not sess:
-        await websocket.send_text(json.dumps({"type":"status","status":"error","error":"Session not found"}))
+        await websocket.send_text(json.dumps({"type": "status", "status": "error", "error": "Session not found"}))
         await websocket.close(code=1008)
         return
-    if sess.owner != username:
+    if sess.owner != username or sess.device_type != "switch":
         await websocket.close(code=1008)
         return
 
@@ -255,22 +242,33 @@ async def switch_terminal_ws(websocket: WebSocket, session_id: str):
         sess.add_client(websocket)
         sess.start_reader(asyncio.get_running_loop())
         await sess.send_buffer(websocket)
-        await websocket.send_text(json.dumps({"type":"status","status":sess.status,"error":sess.error}, ensure_ascii=False))
+        await websocket.send_text(
+            json.dumps({"type": "status", "status": sess.status, "error": sess.error}, ensure_ascii=False)
+        )
 
         while True:
-            raw_in = await websocket.receive_text()
+            try:
+                raw_in = await asyncio.wait_for(websocket.receive_text(), timeout=30)
+            except asyncio.TimeoutError:
+                if sess.status in ("closed", "error"):
+                    await websocket.close(code=1000)
+                    return
+                continue
+
             try:
                 m = json.loads(raw_in)
             except Exception:
                 continue
+
             t = m.get("type")
             if t == "input":
                 sess.send_input(m.get("data", ""))
             elif t == "ping":
-                await websocket.send_text(json.dumps({"type":"pong"}))
+                sess.touch_seen()
+                await websocket.send_text(json.dumps({"type": "pong"}))
             elif t == "close":
                 terminal_manager.force_close(session_id)
-                await websocket.close()
+                await websocket.close(code=1000)
                 return
 
     except WebSocketDisconnect:

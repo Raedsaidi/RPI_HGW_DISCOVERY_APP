@@ -58,10 +58,11 @@ const SwitchesPage = () => {
       setTotalPages(res.data.total_pages || 1)
     } catch (e) {
       console.error(e)
+      notify('error', getFriendlyMessage('error', e?.response?.data?.detail || e.message || 'Failed to load switches'))
     } finally {
       setLoading(false)
     }
-  }, [page, search, filterEnabled])
+  }, [page, search, filterEnabled, notify])
 
   useEffect(() => {
     fetchSwitches()
@@ -172,7 +173,11 @@ const SwitchesPage = () => {
       key: 'last_seen',
       title: 'Last Seen',
       render: (val) =>
-        val ? <span className="sw-table__time">{dayjs(val).format('MMM D, HH:mm')}</span> : <span className="sw-table__null">—</span>,
+        val ? (
+          <span className="sw-table__time">{dayjs(val).format('MMM D, HH:mm')}</span>
+        ) : (
+          <span className="sw-table__null">—</span>
+        ),
     },
     {
       key: 'enabled',
@@ -336,7 +341,7 @@ const SwitchesPage = () => {
         }
       />
 
-      {/* Terminal (autoStart => déjà connecté) */}
+      {/* Terminal */}
       <TerminalModal
         open={!!terminalTarget}
         onClose={() => setTerminalTarget(null)}
@@ -344,8 +349,8 @@ const SwitchesPage = () => {
         deviceType="switch"
         targetLabel={terminalTarget?.ip || ''}
         targetKey={terminalTarget?.id || ''}
-        apiOpen={() => switchesApi.terminalOpen(terminalTarget.id)}
-        apiList={() => switchesApi.terminalList(terminalTarget.id)}
+        apiOpen={() => switchesApi.terminalOpen(terminalTarget?.id)}
+        apiList={() => switchesApi.terminalList(terminalTarget?.id)}
         apiClose={(sid) => switchesApi.terminalClose(sid)}
         wsPathForSession={(sid) => `/api/v1/switches/terminal/${sid}/ws`}
         autoStart={true}

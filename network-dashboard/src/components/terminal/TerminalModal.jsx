@@ -8,23 +8,38 @@ const toWsBase = (httpUrl) =>
 
 const nowTime = () => new Date().toISOString().slice(11, 19)
 
+const chunkString = (str, size) => {
+  if (!str) return []
+  if (str.length <= size) return [str]
+  const out = []
+  for (let i = 0; i < str.length; i += size) out.push(str.slice(i, i + size))
+  return out
+}
+
 const TerminalModal = ({
   open,
   onClose,
+  title,
 
   deviceType,
   targetLabel,
+  targetKey,
 
   apiOpen,
   apiList,
   apiClose,
   wsPathForSession,
+
+  autoStart = true,
+  pingIntervalMs = 25000,
+  inputChunkSize = 1500,
 }) => {
   const termDivRef = useRef(null)
   const xtermRef = useRef(null)
   const fitRef = useRef(null)
 
   const wsRef = useRef(null)
+  const pingTimerRef = useRef(null)
   const onDataDisposableRef = useRef(null)
   const resizeHandlerRef = useRef(null)
   const openedOnceRef = useRef(false)
@@ -57,35 +72,30 @@ const TerminalModal = ({
     fitRef.current.fit()
 
     xtermRef.current.attachCustomKeyEventHandler((ev) => {
-      // Esc => close overlay (detach only)
       if (ev.key === 'Escape') {
         ev.preventDefault()
         onClose?.()
         return false
       }
 
-      // Ctrl+Shift+N => new session
       if (ev.ctrlKey && ev.shiftKey && ev.code === 'KeyN') {
         ev.preventDefault()
         handleNewSession()
         return false
       }
 
-      // Ctrl+Shift+S => list sessions
       if (ev.ctrlKey && ev.shiftKey && ev.code === 'KeyS') {
         ev.preventDefault()
         handleListSessions()
         return false
       }
 
-      // Ctrl+Shift+K => close current session (server close)
       if (ev.ctrlKey && ev.shiftKey && ev.code === 'KeyK') {
         ev.preventDefault()
         handleCloseSession()
         return false
       }
 
-      // Alt+1..9 attach last listed
       if (ev.altKey && !ev.ctrlKey && !ev.shiftKey) {
         const key = ev.key
         if (key >= '1' && key <= '9') {
@@ -108,6 +118,9 @@ const TerminalModal = ({
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const cleanupWsAndHandlers = useCallback(() => {
+    try { clearInterval(pingTimerRef.current) } catch {}
+    pingTimerRef.current = null
+
     try { wsRef.current?.close() } catch {}
     wsRef.current = null
 
@@ -146,9 +159,16 @@ const TerminalModal = ({
 
     ws.onopen = () => {
       const token = localStorage.getItem('nd_access_token')
+      if (!token) {
+        termPrint('ERROR: missing token (nd_access_token)')
+        try { ws.close() } catch {}
+        return
+      }
+
       ws.send(JSON.stringify({ type: 'auth', token }))
 
-      termPrint(`CONNECTED — ${deviceType.toUpperCase()} ${targetLabel}`)
+      termPrint(title || `TERMINAL — ${deviceType.toUpperCase()} ${targetLabel}`)
+      termPrint(`Key=${String(targetKey)}`)
       termPrint('Hotkeys: Esc(close overlay) Ctrl+Shift+N(new) Ctrl+Shift+S(list) Alt+1..9(attach) Ctrl+Shift+K(close session)')
 
       try {
@@ -156,6 +176,10 @@ const TerminalModal = ({
         const rows = xtermRef.current.rows
         ws.send(JSON.stringify({ type: 'resize', cols, rows }))
       } catch {}
+
+      pingTimerRef.current = setInterval(() => {
+        try { wsRef.current?.send(JSON.stringify({ type: 'ping' })) } catch {}
+      }, pingIntervalMs)
     }
 
     ws.onmessage = (ev) => {
@@ -166,16 +190,28 @@ const TerminalModal = ({
         if (msg.data) xtermRef.current.write(msg.data)
       } else if (msg.type === 'output') {
         if (msg.data) xtermRef.current.write(msg.data)
-      } else if (msg.type === 'status' && msg.status === 'error') {
-        termPrint(`ERROR: ${msg.error || 'terminal error'}`)
+      } else if (msg.type === 'status') {
+        if (msg.status === 'error') {
+          termPrint(`ERROR: ${msg.error || 'terminal error'}`)
+        } else if (msg.status === 'closed') {
+          termPrint('SESSION CLOSED by server.')
+          cleanupWsAndHandlers()
+        }
       }
     }
 
     ws.onerror = () => termPrint('WS ERROR')
-    ws.onclose = () => termPrint('WS CLOSED (resume: Ctrl+Shift+S then Alt+<n>)')
+    ws.onclose = () => {
+      termPrint('WS CLOSED (resume: Ctrl+Shift+S then Alt+<n>)')
+      try { clearInterval(pingTimerRef.current) } catch {}
+      pingTimerRef.current = null
+    }
 
     onDataDisposableRef.current = xtermRef.current.onData((data) => {
-      try { wsRef.current?.send(JSON.stringify({ type: 'input', data })) } catch {}
+      const parts = chunkString(data, inputChunkSize)
+      for (const p of parts) {
+        try { wsRef.current?.send(JSON.stringify({ type: 'input', data: p })) } catch {}
+      }
     })
 
     const onResize = () => {
@@ -188,7 +224,19 @@ const TerminalModal = ({
     }
     resizeHandlerRef.current = onResize
     window.addEventListener('resize', onResize)
-  }, [cleanupWsAndHandlers, deviceType, initXterm, targetLabel, termPrint, wsBase, wsPathForSession])
+  }, [
+    cleanupWsAndHandlers,
+    deviceType,
+    initXterm,
+    inputChunkSize,
+    pingIntervalMs,
+    targetLabel,
+    targetKey,
+    title,
+    termPrint,
+    wsBase,
+    wsPathForSession,
+  ])
 
   const handleNewSession = useCallback(async () => {
     initXterm()
@@ -245,7 +293,7 @@ const TerminalModal = ({
   const openWithResumeOrNew = useCallback(async () => {
     initXterm()
     termPrint('========================================')
-    termPrint(`DISCOVERY TERMINAL — ${deviceType.toUpperCase()} ${targetLabel}`)
+    termPrint(title || `DISCOVERY TERMINAL — ${deviceType.toUpperCase()} ${targetLabel}`)
     termPrint('Trying to resume last session...')
 
     const list = await loadSessions()
@@ -258,7 +306,7 @@ const TerminalModal = ({
 
     termPrint('No session to resume. Creating a new one...')
     await handleNewSession()
-  }, [attach, deviceType, handleNewSession, initXterm, loadSessions, targetLabel, termPrint])
+  }, [attach, deviceType, handleNewSession, initXterm, loadSessions, targetLabel, title, termPrint])
 
   useEffect(() => {
     if (!open) {
@@ -267,41 +315,26 @@ const TerminalModal = ({
       return
     }
 
-    // disable body scroll (optional)
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
 
     if (!openedOnceRef.current) {
       openedOnceRef.current = true
-      openWithResumeOrNew()
+      if (autoStart) openWithResumeOrNew()
+      else handleListSessions()
     }
 
     return () => {
       document.body.style.overflow = prevOverflow
       cleanupWsAndHandlers()
     }
-  }, [open, cleanupWsAndHandlers, openWithResumeOrNew])
+  }, [open, autoStart, cleanupWsAndHandlers, openWithResumeOrNew, handleListSessions])
 
   if (!open) return null
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 9999,
-        background: '#0b1020',
-      }}
-      // click outside does NOTHING (no white overlay, no border)
-    >
-      <div
-        ref={termDivRef}
-        style={{
-          width: '100vw',
-          height: '100vh',
-          background: '#0b1020',
-        }}
-      />
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#0b1020' }}>
+      <div ref={termDivRef} style={{ width: '100vw', height: '100vh', background: '#0b1020' }} />
     </div>
   )
 }

@@ -58,6 +58,7 @@ services:
       INITIAL_SUPERADMIN_PASSWORD: "SuperAdmin123!"
       INITIAL_SUPERADMIN_EMAIL: "superadmin@example.com"
       INITIAL_SUPERADMIN_FULL_NAME: "Super Admin"
+      INTERNAL_API_KEY: "my-internal-api-key-1234567890"
     depends_on:
       mysql:
         condition: service_healthy
@@ -106,6 +107,10 @@ services:
       SYNC_MINUTE: "0"
       SYNC_ENABLED: "true"
       SYNC_TIMEZONE: "UTC"
+      AUTH_SERVICE_URL: "http://auth_service:8000"              
+      INTERNAL_API_KEY: "my-internal-api-key-1234567890"   
+      RESEND_API_KEY: "re_bxWBcLwj_7NU17oVgU5bQkvGUH2chv68L"                  
+      ALERT_EMAIL_FROM: "onboarding@resend.dev" 
     depends_on:
       mysql:
         condition: service_healthy

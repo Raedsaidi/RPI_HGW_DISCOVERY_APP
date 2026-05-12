@@ -512,3 +512,15 @@
 .topology-page__canvas-wrap--expanded .topology-page__expand-controls {
   z-index: 2010;
 }
+.topology-page__detail-actions {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+}
+
+/* force le bouton à prendre toute la largeur */
+.topology-page__detail-actions > * {
+  width: 80%;
+  margin: 0 auto;
+}

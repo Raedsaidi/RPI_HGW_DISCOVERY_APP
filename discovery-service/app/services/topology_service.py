@@ -330,15 +330,22 @@ class TopologyService:
 
         switch_rpi_map: dict[str, dict[str, str]] = {}
         for entry in mac_entries:
-            mac_u = entry.mac.upper()
+            mac_u = (entry.mac or "").upper()
             if mac_u in piserver_mac_to_ip:
                 rpi_ip = piserver_mac_to_ip[mac_u]
                 if entry.switch_ip not in switch_rpi_map:
                     switch_rpi_map[entry.switch_ip] = {}
                 switch_rpi_map[entry.switch_ip][rpi_ip] = entry.port
 
+        # ✅ IMPORTANT pour mini-update:
+        # si on recollecte un RPi dans le même run_id, il y aura plusieurs RpiFact.
+        # Donc on garde le plus récent (par id desc).
         rpi_facts = self.rpi_repo.get_facts_for_run(run_id)
-        rpi_fact_map = {f.rpi_ip_mgmt: f for f in rpi_facts}
+        rpi_fact_map: dict[str, object] = {}
+        for f in rpi_facts:
+            prev = rpi_fact_map.get(f.rpi_ip_mgmt)
+            if not prev or f.id > prev.id:
+                rpi_fact_map[f.rpi_ip_mgmt] = f
 
         hgw_facts = self.hgw_repo.get_facts_for_run(run_id)
 
@@ -391,6 +398,7 @@ class TopologyService:
 
         errors = self.discovery_repo.get_errors_for_run(run_id)
 
+        # Note: get_errors_for_run order_by(DeviceError.id), donc le dict garde la dernière erreur si duplicate
         rpi_errors = {e.device_ip: e.error for e in errors if e.device_type == "rpi"}
         hgw_errors = {e.device_ip: e.error for e in errors if e.device_type == "hgw"}
         switch_errors = {e.device_ip: e.error for e in errors if e.device_type == "switch"}

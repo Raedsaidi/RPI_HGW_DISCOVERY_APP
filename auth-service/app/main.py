@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.db import Base, engine, SessionLocal
 from app.core.security import get_password_hash
 from app.models.user import User, UserRole
+from app.api.v1.endpoints.internal import router as internal_router
 
 
 # ─── Setup Logging ─────────────────────────────────────────
@@ -210,6 +211,7 @@ def create_app() -> FastAPI:
 
     # ─── Routes ──────────────────────────────────
     app.include_router(auth_router, prefix="/api/v1", tags=["Authentication"])
+    app.include_router(internal_router, prefix="/internal", tags=["internal"])
 
     # ─── Health Check ────────────────────────────────────
     @app.get("/health", tags=["Health"], summary="Health check endpoint")

@@ -48,9 +48,17 @@ class Settings(BaseSettings):
     SYNC_TIMEZONE: str = "UTC"
 
     # ── AUTH SERVICE ─────────────────────────────────────────
-    # URL du service d'authentification (ex: auth-service en docker)
     AUTH_SERVICE_URL: str = "http://auth-service:8000"
     AUTH_SERVICE_TIMEOUT: float = 5.0
+    # ─────────────────────────────────────────────────────────
+
+    # ── INTERNAL API KEY (partagée auth ↔ discovery) ─────────
+    INTERNAL_API_KEY: str = "my-internal-api-key-1234567890"
+    # ─────────────────────────────────────────────────────────
+
+    # ── RESEND EMAIL ─────────────────────────────────────────
+    RESEND_API_KEY: str = ""
+    ALERT_EMAIL_FROM: str = "onboarding@resend.dev"
     # ─────────────────────────────────────────────────────────
 
     @property

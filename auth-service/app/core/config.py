@@ -30,6 +30,7 @@ class Settings(BaseModel):
     INITIAL_SUPERADMIN_EMAIL: str = Field(default="superadmin@example.com")
     INITIAL_SUPERADMIN_FULL_NAME: str = Field(default="Super Admin")
     DISCOVERY_SERVICE_URL: str = Field(default="http://discovery_service:8001")
+    INTERNAL_API_KEY: str = Field(default="my-internal-api-key-1234567890")
 
     @property
     def DATABASE_URL(self) -> str:
@@ -74,6 +75,9 @@ def get_settings() -> Settings:
         ),
         DISCOVERY_SERVICE_URL=os.getenv(
             "DISCOVERY_SERVICE_URL", "http://discovery_service:8001"
+        ),
+        INTERNAL_API_KEY=os.getenv(
+            "INTERNAL_API_KEY", "my-internal-api-key-1234567890"
         ),
     )
 
