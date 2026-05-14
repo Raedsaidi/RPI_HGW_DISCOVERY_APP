@@ -71,6 +71,7 @@
 .topology-page__stat--switch { color: var(--primary-6); }
 .topology-page__stat--rpi    { color: var(--purple-main); }
 .topology-page__stat--hgw    { color: var(--cyan-main); }
+.topology-page__stat--docker { color: #fa8c16; }
 
 .topology-page__stat-sep {
   width: 1px;
@@ -375,6 +376,8 @@
   );
 }
 
+.topology-page__legend-line--docker { background: #fa8c16; }
+
 /* ─────────────────────────────────────────
    Node detail panel
 ───────────────────────────────────────── */
@@ -382,7 +385,7 @@
   position: absolute;
   top: 16px;
   left: 16px;
-  width: 240px;
+  width: 280px;
   background: var(--neutral-1);
   border: 1px solid var(--neutral-5);
   border-radius: var(--radius-lg);
@@ -453,6 +456,8 @@
 
 .topology-page__detail-body {
   padding: 8px 0;
+  max-height: 70vh;
+  overflow: auto;
 }
 
 .topology-page__detail-row {
@@ -481,6 +486,36 @@
   font-weight: 500;
   text-align: right;
   word-break: break-all;
+}
+
+/* lists inside detail */
+.topology-page__detail-list {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--neutral-4);
+  font-size: 12px;
+}
+
+.topology-page__detail-list-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--neutral-7);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.topology-page__detail-list ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.topology-page__detail-list li {
+  margin-bottom: 6px;
+  color: var(--neutral-10);
+}
+
+.topology-page__detail-list li:last-child {
+  margin-bottom: 0;
 }
 
 /* ─────────────────────────────────────────
@@ -512,6 +547,7 @@
 .topology-page__canvas-wrap--expanded .topology-page__expand-controls {
   z-index: 2010;
 }
+
 .topology-page__detail-actions {
   margin-top: 12px;
   padding-top: 12px;
@@ -524,3 +560,5 @@
   width: 80%;
   margin: 0 auto;
 }
+.topo-node__usb-badge { opacity: 0.95; }
+.topology-page__legend-line--docker { background: #fa8c16; }

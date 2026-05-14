@@ -1,4 +1,5 @@
 import logging
+import json
 from typing import Optional
 from sqlalchemy.orm import Session
 
@@ -6,6 +7,7 @@ from app.repositories.discovery_repo import DiscoveryRepository
 from app.repositories.switch_repo import SwitchRepository
 from app.repositories.rpi_repo import RpiRepository
 from app.repositories.hgw_repo import HgwRepository
+from app.repositories.rpi_docker_repo import RpiDockerRepository
 from app.parsers.piserver_parser import parse_piserver
 from app.clients.user_client import UserServiceClient
 from app.schemas.user_schema import UserRole
@@ -17,7 +19,7 @@ ALL_HGW_IDENTIFIER = "ALL"
 
 
 class TopologyService:
-    """Build topology tree: Switch → RPi → HGW."""
+    """Build topology tree: Switch → RPi → HGW (+ Docker containers)."""
 
     def __init__(self, db: Session, user_client: UserServiceClient):
         self.db = db
@@ -26,6 +28,7 @@ class TopologyService:
         self.switch_repo = SwitchRepository(db)
         self.rpi_repo = RpiRepository(db)
         self.hgw_repo = HgwRepository(db)
+        self.rpi_docker_repo = RpiDockerRepository(db)
 
     # ─────────────────────────────────────────────────────────────────────
     # INTERNAL HELPERS
@@ -403,6 +406,9 @@ class TopologyService:
         hgw_errors = {e.device_ip: e.error for e in errors if e.device_type == "hgw"}
         switch_errors = {e.device_ip: e.error for e in errors if e.device_type == "switch"}
 
+        # ✅ NEW: docker sync snapshot (per rpi_ip_mgmt)
+        docker_by_rpi = self.rpi_docker_repo.get_by_run_grouped(run_id)
+
         return dict(
             rpi_entries=rpi_entries,
             piserver_mac_to_ip=piserver_mac_to_ip,
@@ -417,6 +423,7 @@ class TopologyService:
             hgw_errors=hgw_errors,
             switch_errors=switch_errors,
             errors=errors,
+            docker_by_rpi=docker_by_rpi,
         )
 
     # ─────────────────────────────────────────────────────────────────────
@@ -429,11 +436,13 @@ class TopologyService:
             piserver_ip_to_label, switch_rpi_map, rpi_fact_map,
             hgw_fact_path_map, hgw_fact_ip_map, hgw_fact_instance_map,
             rpi_errors, hgw_errors, switch_errors, errors,
+            docker_by_rpi,
         ) = (ctx[k] for k in (
             "rpi_entries", "piserver_ip_to_mac",
             "piserver_ip_to_label", "switch_rpi_map", "rpi_fact_map",
             "hgw_fact_path_map", "hgw_fact_ip_map", "hgw_fact_instance_map",
             "rpi_errors", "hgw_errors", "switch_errors", "errors",
+            "docker_by_rpi",
         ))
 
         switches_configured = self.switch_repo.list_all()
@@ -467,6 +476,12 @@ class TopologyService:
                         if not hgw_fact:
                             hgw_fact = hgw_fact_ip_map.get(hgw_ip)
 
+                # ✅ NEW: docker info (from docker sync service)
+                docker_info = docker_by_rpi.get(rpi_ip, {}) if docker_by_rpi else {}
+                wifi_usb_adapters = docker_info.get("wifi_usb_adapters", []) or []
+                docker_clients = docker_info.get("docker_clients", []) or []
+                docker_error = docker_info.get("error")
+
                 rpis_on_switch.append({
                     "ip_mgmt":          rpi_ip,
                     "mac":              piserver_ip_to_mac.get(rpi_ip),
@@ -482,6 +497,12 @@ class TopologyService:
                     "docker_available": rpi_fact.docker_available if rpi_fact else None,
                     "ssh_success":      rpi_ip not in rpi_errors,
                     "ssh_error":        rpi_errors.get(rpi_ip),
+
+                    # ✅ NEW fields for UI
+                    "wifi_usb_adapters": wifi_usb_adapters,
+                    "docker_clients": docker_clients,
+                    "docker_error": docker_error,
+
                     "hgw": (
                         self._build_hgw_node(
                             hgw_ip=hgw_ip,

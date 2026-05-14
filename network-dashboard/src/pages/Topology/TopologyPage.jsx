@@ -14,6 +14,7 @@ import {
   AlertCircle,
   LayoutGrid,
   Filter,
+  Boxes,
 } from 'lucide-react'
 import Button from '@/components/common/Button'
 import Spinner from '@/components/common/Spinner'
@@ -31,12 +32,13 @@ const NODE_COLORS = {
   switch: { fill: '#1890ff', light: '#e6f7ff', border: '#91d5ff' },
   rpi: { fill: '#722ed1', light: '#f9f0ff', border: '#d3adf7' },
   hgw: { fill: '#13c2c2', light: '#e6fffb', border: '#87e8de' },
+  docker: { fill: '#fa8c16', light: '#fff7e6', border: '#ffd591' },
   unknown: { fill: '#8c8c8c', light: '#fafafa', border: '#d9d9d9' },
 }
 
 const FAILED_COLOR = '#f5222d'
-const NODE_RADIUS = { switch: 28, rpi: 22, hgw: 18, unknown: 16 }
-const ICONS = { switch: '⇄', rpi: '◉', hgw: '⊙' }
+const NODE_RADIUS = { switch: 28, rpi: 22, hgw: 18, docker: 16, unknown: 16 }
+const ICONS = { switch: '⇄', rpi: '◉', hgw: '⊙', docker: '□' }
 
 // Roles that can see the full topology / switch view
 const FULL_ACCESS_ROLES = ['SUPER_ADMIN', 'ADMIN']
@@ -70,6 +72,27 @@ const getHgwGraphKey = (hgw, rpi) => {
   if (hgw.instance_key) return `inst:${hgw.instance_key}`
   if (hgw.ip) return `ip:${hgw.ip}|via:${rpi?.ip_mgmt || 'unknown'}`
   return null
+}
+
+/**
+ * vendor detection from lsusb lines (frontend-only)
+ * supports string or {line: "..."} if backend ever changes.
+ */
+const getUsbVendorFromLine = (x) => {
+  const line = typeof x === 'string' ? x : x?.line
+  const s = String(line || '').toLowerCase()
+  if (s.includes('netgear')) return 'NetGear'
+  if (s.includes('tp-link') || s.includes('tplink')) return 'TP-Link'
+  return 'USB'
+}
+
+const buildUsbVendorSummary = (lines) => {
+  const counts = { NetGear: 0, 'TP-Link': 0, USB: 0 }
+  ;(lines || []).forEach((ln) => {
+    const v = getUsbVendorFromLine(ln)
+    counts[v] = (counts[v] || 0) + 1
+  })
+  return counts
 }
 
 /**
@@ -213,6 +236,32 @@ const parseTopology = (data) => {
 
       links.push({ source: id, target: hgwNodeId, type: 'rpi-hgw' })
     }
+
+    // ✅ Docker containers (4th node) under RPi
+    const dockerList = Array.isArray(rpi.docker_clients) ? rpi.docker_clients : []
+    dockerList.forEach((c, idx) => {
+      const name = c?.name || `container-${idx + 1}`
+      const cid = c?.container_id || ''
+      const safeName = String(name).replace(/[^a-zA-Z0-9_.-]/g, '_')
+      const safeCid = String(cid).slice(0, 12).replace(/[^a-zA-Z0-9]/g, '')
+      const dockerNodeId = `docker-${rpi.ip_mgmt}-${safeName}-${safeCid || idx}`
+
+      nodes.push({
+        id: dockerNodeId,
+        ip: c?.ip || '',
+        label: name,
+        type: 'docker',
+        data: {
+          ...c,
+          name,
+          container_id: cid,
+          rpi_ip_mgmt: rpi.ip_mgmt,
+          docker_error: rpi.docker_error || null,
+        },
+      })
+
+      links.push({ source: id, target: dockerNodeId, type: 'rpi-docker' })
+    })
   })
 
   return { nodes, links }
@@ -226,6 +275,7 @@ const isFailedNode = (node) => {
   }
   if (node.type === 'hgw') return !!(d.ssh_success === false || d.ssh_error)
   if (node.type === 'switch') return !!d.ssh_error
+  // docker nodes are informational (we don't mark them failed based on docker_error)
   return false
 }
 
@@ -254,10 +304,10 @@ const TopologyPage = () => {
   const [runId, setRunId] = useState(null)
   const [runs, setRuns] = useState([])
   const [selectedNode, setSelectedNode] = useState(null)
-  const [stats, setStats] = useState({ switches: 0, rpis: 0, hgws: 0 })
+  const [stats, setStats] = useState({ switches: 0, rpis: 0, hgws: 0, dockers: 0 })
   const [expanded, setExpanded] = useState(false)
 
-  // ✅ NEW: mini update loading state
+  // ✅ mini update loading state
   const [miniUpdating, setMiniUpdating] = useState(false)
 
   // ── View mode state ──
@@ -269,7 +319,7 @@ const TopologyPage = () => {
   const [selectedHgwId, setSelectedHgwId] = useState('')
 
   const [availableSwitches, setAvailableSwitches] = useState([])
-  // we store normalized options: [{value, label, instances}]
+  // normalized options: [{value, label, instances}]
   const [availableHgws, setAvailableHgws] = useState([])
   const [hgwsLoading, setHgwsLoading] = useState(false)
 
@@ -355,6 +405,8 @@ const TopologyPage = () => {
 
         let totalRpis = 0
         const hgwSet = new Set()
+        let dockerCount = 0
+
         ;(data.switches || []).forEach((sw) => {
           totalRpis += (sw.rpis || []).length
           ;(sw.rpis || []).forEach((rpi) => {
@@ -362,6 +414,7 @@ const TopologyPage = () => {
               const key = getHgwGraphKey(rpi.hgw, rpi)
               if (key) hgwSet.add(key)
             }
+            dockerCount += Array.isArray(rpi?.docker_clients) ? rpi.docker_clients.length : 0
           })
         })
         totalRpis += (data.unassigned_rpis || []).length
@@ -370,6 +423,7 @@ const TopologyPage = () => {
           switches: (data.switches || []).length,
           rpis: totalRpis,
           hgws: hgwSet.size,
+          dockers: dockerCount,
         })
 
         if (!silent) notify('success', 'Topology loaded successfully')
@@ -385,7 +439,7 @@ const TopologyPage = () => {
     [notify, viewMode, selectedSwitchIp, selectedHgwId, isFullAccess]
   )
 
-  // ✅ NEW: trigger mini discovery update for selected HGW
+  // ✅ trigger mini discovery update for selected HGW
   const handleMiniDiscoveryForSelectedHgw = useCallback(async () => {
     const rid = runId || topology?.run_id
     if (!rid) {
@@ -410,8 +464,6 @@ const TopologyPage = () => {
       })
 
       notify('success', 'Mini discovery started. Topology will refresh automatically.')
-
-      // refresh quickly so run_status becomes "running" and polling starts
       setTimeout(() => fetchTopology(rid, { silent: true }), 400)
     } catch (e) {
       const msg = getFriendlyMessage('error', e.response?.data?.detail || 'Mini discovery failed')
@@ -437,14 +489,7 @@ const TopologyPage = () => {
   useEffect(() => {
     if (!svgRef.current) return
     if (graphRef.current.simulation) graphRef.current.simulation.stop()
-    graphRef.current = {
-      inited: false,
-      svg: null,
-      g: null,
-      linkGroup: null,
-      nodeGroup: null,
-      simulation: null,
-    }
+    graphRef.current = { inited: false, svg: null, g: null, linkGroup: null, nodeGroup: null, simulation: null }
     d3.select(svgRef.current).selectAll('*').remove()
     zoomRef.current = null
   }, [runId])
@@ -453,14 +498,7 @@ const TopologyPage = () => {
   useEffect(() => {
     if (!runId) return
     if (graphRef.current.simulation) graphRef.current.simulation.stop()
-    graphRef.current = {
-      inited: false,
-      svg: null,
-      g: null,
-      linkGroup: null,
-      nodeGroup: null,
-      simulation: null,
-    }
+    graphRef.current = { inited: false, svg: null, g: null, linkGroup: null, nodeGroup: null, simulation: null }
     if (svgRef.current) d3.select(svgRef.current).selectAll('*').remove()
     zoomRef.current = null
     fetchTopology(runId)
@@ -490,6 +528,14 @@ const TopologyPage = () => {
     const W = container?.clientWidth || 900
     const H = container?.clientHeight || 600
 
+    const getRpiUsbBadgeText = (d) => {
+      if (d.type !== 'rpi') return ''
+      const usbLines = d.data?.wifi_usb_adapters || []
+      const c = buildUsbVendorSummary(usbLines)
+      if (!c.NetGear && !c['TP-Link']) return ''
+      return `TP:${c['TP-Link']} NG:${c.NetGear}`
+    }
+
     if (!graphRef.current.inited) {
       const svg = d3.select(svgRef.current).attr('width', W).attr('height', H)
       svg.selectAll('*').remove()
@@ -501,8 +547,8 @@ const TopologyPage = () => {
       merge.append('feMergeNode').attr('in', 'coloredBlur')
       merge.append('feMergeNode').attr('in', 'SourceGraphic')
 
-      ;['switch-rpi', 'rpi-hgw'].forEach((type) => {
-        const color = type === 'switch-rpi' ? '#1890ff' : '#722ed1'
+      ;['switch-rpi', 'rpi-hgw', 'rpi-docker'].forEach((type) => {
+        const color = type === 'switch-rpi' ? '#1890ff' : type === 'rpi-hgw' ? '#722ed1' : '#fa8c16'
         defs
           .append('marker')
           .attr('id', `arrow-${type}`)
@@ -536,7 +582,7 @@ const TopologyPage = () => {
           d3
             .forceLink([])
             .id((d) => d.id)
-            .distance((d) => (d.type === 'switch-rpi' ? 150 : 110))
+            .distance((d) => (d.type === 'switch-rpi' ? 150 : d.type === 'rpi-hgw' ? 110 : 90))
             .strength(0.85)
         )
         .force('charge', d3.forceManyBody().strength(-520))
@@ -583,7 +629,9 @@ const TopologyPage = () => {
       .enter()
       .append('line')
       .attr('class', 'topo-link')
-      .attr('stroke', (d) => (d.type === 'switch-rpi' ? '#1890ff' : '#722ed1'))
+      .attr('stroke', (d) =>
+        d.type === 'switch-rpi' ? '#1890ff' : d.type === 'rpi-hgw' ? '#722ed1' : '#fa8c16'
+      )
       .attr('stroke-width', (d) => (d.type === 'switch-rpi' ? 2 : 1.5))
       .attr('stroke-dasharray', (d) => (d.type === 'rpi-hgw' ? '4,3' : null))
       .attr('marker-end', (d) => `url(#arrow-${d.type})`)
@@ -690,12 +738,33 @@ const TopologyPage = () => {
       .attr('dy', (d) => NODE_RADIUS[d.type] + 26)
       .text((d) => (d.label !== d.ip ? d.ip : ''))
 
+    // ✅ USB badge on RPi nodes
+    nodeEnter
+      .filter((d) => d.type === 'rpi')
+      .append('text')
+      .attr('class', 'topo-node__usb-badge')
+      .attr('text-anchor', 'start')
+      .attr('font-size', '9px')
+      .attr('font-weight', '700')
+      .attr('fill', '#262626')
+      .attr('pointer-events', 'none')
+      .attr('x', NODE_RADIUS.rpi + 8)
+      .attr('y', -NODE_RADIUS.rpi + 6)
+      .text((d) => getRpiUsbBadgeText(d))
+
     nodeEnter.transition().duration(450).attr('opacity', 1)
 
     nodeSel = nodeEnter.merge(nodeSel)
     nodeSel.select('circle.topo-node__pulse').attr('stroke', (d) => (isFailedNode(d) ? FAILED_COLOR : NODE_COLORS[d.type].fill))
     nodeSel.select('circle.topo-node__circle').attr('fill', (d) => (isFailedNode(d) ? FAILED_COLOR : NODE_COLORS[d.type].fill))
 
+    // ✅ update usb badge on refresh
+    nodeSel
+      .filter((d) => d.type === 'rpi')
+      .select('text.topo-node__usb-badge')
+      .text((d) => getRpiUsbBadgeText(d))
+
+    // Update label background rect size (based on label bbox)
     nodeSel.each(function () {
       const textEl = d3.select(this).select('.topo-node__label').node()
       if (!textEl) return
@@ -820,9 +889,15 @@ const TopologyPage = () => {
           <span className="topology-page__stat-label">Gateways</span>
         </div>
         <div className="topology-page__stat-sep" />
+        <div className="topology-page__stat topology-page__stat--docker">
+          <Boxes size={15} />
+          <span className="topology-page__stat-val">{stats.dockers}</span>
+          <span className="topology-page__stat-label">Containers</span>
+        </div>
+        <div className="topology-page__stat-sep" />
         <div className="topology-page__stat">
           <GitBranch size={15} />
-          <span className="topology-page__stat-val">{stats.switches + stats.rpis + stats.hgws}</span>
+          <span className="topology-page__stat-val">{stats.switches + stats.rpis + stats.hgws + stats.dockers}</span>
           <span className="topology-page__stat-label">Total Nodes</span>
         </div>
       </div>
@@ -862,11 +937,7 @@ const TopologyPage = () => {
         {viewMode === VIEW_SWITCH && isFullAccess && (
           <div className="topology-page__filter-group">
             <Filter size={13} className="topology-page__filter-icon" />
-            <select
-              className="topology-page__filter-select"
-              value={selectedSwitchIp}
-              onChange={(e) => setSelectedSwitchIp(e.target.value)}
-            >
+            <select className="topology-page__filter-select" value={selectedSwitchIp} onChange={(e) => setSelectedSwitchIp(e.target.value)}>
               <option value="">— Select a switch —</option>
               {availableSwitches.map((sw) => (
                 <option key={sw.ip} value={sw.ip}>
@@ -884,11 +955,7 @@ const TopologyPage = () => {
             {hgwsLoading ? (
               <span className="topology-page__filter-loading">Loading gateways…</span>
             ) : (
-              <select
-                className="topology-page__filter-select"
-                value={selectedHgwId}
-                onChange={(e) => setSelectedHgwId(e.target.value)}
-              >
+              <select className="topology-page__filter-select" value={selectedHgwId} onChange={(e) => setSelectedHgwId(e.target.value)}>
                 {!isFullAccess && availableHgws.length === 0 && <option value="">No gateways assigned</option>}
                 {isFullAccess && <option value="">— Select a gateway —</option>}
                 {availableHgws.map((opt) => (
@@ -922,12 +989,7 @@ const TopologyPage = () => {
       <div className={`topology-page__canvas-wrap ${expanded ? 'topology-page__canvas-wrap--expanded' : ''}`}>
         {/* Expand */}
         <div className="topology-page__expand-controls">
-          <button
-            className="topology-page__zoom-btn"
-            onClick={() => setExpanded((v) => !v)}
-            title={expanded ? 'Reduce' : 'Expand'}
-            type="button"
-          >
+          <button className="topology-page__zoom-btn" onClick={() => setExpanded((v) => !v)} title={expanded ? 'Reduce' : 'Expand'} type="button">
             {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
         </div>
@@ -952,6 +1014,7 @@ const TopologyPage = () => {
             { type: 'switch', label: 'Switch', color: NODE_COLORS.switch.fill },
             { type: 'rpi', label: 'Raspberry Pi', color: NODE_COLORS.rpi.fill },
             { type: 'hgw', label: 'Gateway', color: NODE_COLORS.hgw.fill },
+            { type: 'docker', label: 'Docker container', color: NODE_COLORS.docker.fill },
           ].map((item) => (
             <div key={item.type} className="topology-page__legend-item">
               <span className="topology-page__legend-dot" style={{ background: item.color }} />
@@ -971,6 +1034,10 @@ const TopologyPage = () => {
           <div className="topology-page__legend-link">
             <span className="topology-page__legend-line topology-page__legend-line--dashed" />
             <span>RPi → Gateway</span>
+          </div>
+          <div className="topology-page__legend-link">
+            <span className="topology-page__legend-line topology-page__legend-line--docker" />
+            <span>RPi → Container</span>
           </div>
         </div>
 
@@ -1008,10 +1075,11 @@ const TopologyPage = () => {
                 {selectedNode.type === 'switch' && <Network size={16} />}
                 {selectedNode.type === 'rpi' && <Cpu size={16} />}
                 {selectedNode.type === 'hgw' && <Wifi size={16} />}
+                {selectedNode.type === 'docker' && <Boxes size={16} />}
               </div>
               <div>
                 <div className="topology-page__detail-type">{selectedNode.type.toUpperCase()}</div>
-                <div className="topology-page__detail-ip mono">{selectedNode.ip}</div>
+                <div className="topology-page__detail-ip mono">{selectedNode.ip || '—'}</div>
               </div>
               <button className="topology-page__detail-close" onClick={() => setSelectedNode(null)} type="button">
                 ×
@@ -1019,7 +1087,7 @@ const TopologyPage = () => {
             </div>
 
             <div className="topology-page__detail-body">
-              {selectedNode.label !== selectedNode.ip && (
+              {selectedNode.label && selectedNode.label !== selectedNode.ip && (
                 <div className="topology-page__detail-row">
                   <span>Label</span>
                   <span>{selectedNode.label}</span>
@@ -1047,12 +1115,7 @@ const TopologyPage = () => {
                   </div>
                   <div className="topology-page__detail-row">
                     <span>Status</span>
-                    <span
-                      style={{
-                        color: isFailedNode(selectedNode) ? FAILED_COLOR : 'var(--success-dark)',
-                        fontWeight: 600,
-                      }}
-                    >
+                    <span style={{ color: isFailedNode(selectedNode) ? FAILED_COLOR : 'var(--success-dark)', fontWeight: 600 }}>
                       {isFailedNode(selectedNode) ? 'Failed' : 'OK'}
                     </span>
                   </div>
@@ -1076,16 +1139,11 @@ const TopologyPage = () => {
                     <span>SSH</span>
                     <span
                       style={{
-                        color:
-                          (selectedNode.data?.ssh_success ?? selectedNode.data?.last_ssh_success) === false
-                            ? FAILED_COLOR
-                            : 'var(--success-dark)',
+                        color: (selectedNode.data?.ssh_success ?? selectedNode.data?.last_ssh_success) === false ? FAILED_COLOR : 'var(--success-dark)',
                         fontWeight: 600,
                       }}
                     >
-                      {(selectedNode.data?.ssh_success ?? selectedNode.data?.last_ssh_success) === false
-                        ? 'Failed'
-                        : 'Success'}
+                      {(selectedNode.data?.ssh_success ?? selectedNode.data?.last_ssh_success) === false ? 'Failed' : 'Success'}
                     </span>
                   </div>
                   <div className="topology-page__detail-row">
@@ -1096,6 +1154,7 @@ const TopologyPage = () => {
                     <span>Port</span>
                     <span>{selectedNode.data?.switch_port || '—'}</span>
                   </div>
+
                   {selectedNode.data?.hostname && (
                     <div className="topology-page__detail-row">
                       <span>Hostname</span>
@@ -1108,6 +1167,70 @@ const TopologyPage = () => {
                       <span>{selectedNode.data.temp_celsius}°C</span>
                     </div>
                   )}
+
+                  {/* ✅ USB WiFi adapters (vendor detected frontend-only) */}
+                  {(() => {
+                    const usbLines = selectedNode.data?.wifi_usb_adapters || []
+                    const counts = buildUsbVendorSummary(usbLines)
+                    const summary =
+                      usbLines.length === 0 ? '0' : `TP-Link=${counts['TP-Link']} NetGear=${counts.NetGear}`
+
+                    return (
+                      <>
+                        <div className="topology-page__detail-row">
+                          <span>USB WiFi</span>
+                          <span className="mono">{summary}</span>
+                        </div>
+
+                        {!!usbLines.length && (
+                          <div className="topology-page__detail-list">
+                            <div className="topology-page__detail-list-title">Adapters</div>
+                            <ul>
+                              {usbLines.slice(0, 8).map((x, idx) => {
+                                const line = typeof x === 'string' ? x : x?.line
+                                return (
+                                  <li key={idx} className="mono">
+                                    {getUsbVendorFromLine(x)}: {line}
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
+
+                  {/* ✅ Docker clients */}
+                  <div className="topology-page__detail-row">
+                    <span>Containers</span>
+                    <span>{(selectedNode.data?.docker_clients || []).length}</span>
+                  </div>
+                  {(selectedNode.data?.docker_error || '') && (
+                    <div className="topology-page__detail-row">
+                      <span>Docker error</span>
+                      <span>{selectedNode.data.docker_error}</span>
+                    </div>
+                  )}
+                  {!!(selectedNode.data?.docker_clients || []).length && (
+                    <div className="topology-page__detail-list">
+                      <div className="topology-page__detail-list-title">Docker clients/peers</div>
+                      <ul>
+                        {(selectedNode.data.docker_clients || []).slice(0, 10).map((c, idx) => (
+                          <li key={idx}>
+                            <div>
+                              <b>{c.name}</b>{' '}
+                              {c.container_id ? <span className="mono">({String(c.container_id).slice(0, 12)})</span> : null}
+                            </div>
+                            <div className="mono">
+                              ip={c.ip || '—'} gw={c.hgw_ip || '—'} iface={c.wlan_iface || '—'}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   {(selectedNode.data?.ssh_error || selectedNode.data?.last_ssh_error) && (
                     <div className="topology-page__detail-row">
                       <span>Error</span>
@@ -1152,12 +1275,7 @@ const TopologyPage = () => {
                   </div>
                   <div className="topology-page__detail-row">
                     <span>Status</span>
-                    <span
-                      style={{
-                        color: isFailedNode(selectedNode) ? FAILED_COLOR : 'var(--success-dark)',
-                        fontWeight: 600,
-                      }}
-                    >
+                    <span style={{ color: isFailedNode(selectedNode) ? FAILED_COLOR : 'var(--success-dark)', fontWeight: 600 }}>
                       {isFailedNode(selectedNode) ? 'Failed' : 'OK'}
                     </span>
                   </div>
@@ -1168,7 +1286,7 @@ const TopologyPage = () => {
                     </div>
                   )}
 
-                  {/* ✅ NEW: mini discovery button */}
+                  {/* ✅ mini discovery button */}
                   <div className="topology-page__detail-actions">
                     <Button
                       variant="primary"
@@ -1180,6 +1298,36 @@ const TopologyPage = () => {
                     >
                       Mini discovery (update)
                     </Button>
+                  </div>
+                </>
+              )}
+
+              {/* Docker node fields */}
+              {selectedNode.type === 'docker' && (
+                <>
+                  <div className="topology-page__detail-row">
+                    <span>Name</span>
+                    <span>{selectedNode.data?.name || selectedNode.label || '—'}</span>
+                  </div>
+                  <div className="topology-page__detail-row">
+                    <span>Container ID</span>
+                    <span className="mono">{selectedNode.data?.container_id || '—'}</span>
+                  </div>
+                  <div className="topology-page__detail-row">
+                    <span>RPi</span>
+                    <span className="mono">{selectedNode.data?.rpi_ip_mgmt || '—'}</span>
+                  </div>
+                  <div className="topology-page__detail-row">
+                    <span>WLAN iface</span>
+                    <span className="mono">{selectedNode.data?.wlan_iface || '—'}</span>
+                  </div>
+                  <div className="topology-page__detail-row">
+                    <span>IP</span>
+                    <span className="mono">{selectedNode.data?.ip || selectedNode.ip || '—'}</span>
+                  </div>
+                  <div className="topology-page__detail-row">
+                    <span>HGW IP</span>
+                    <span className="mono">{selectedNode.data?.hgw_ip || '—'}</span>
                   </div>
                 </>
               )}

@@ -13,6 +13,7 @@ from app.core.logging_config import setup_logging
 from app.middleware.logging_middleware import RequestLoggingMiddleware
 from app.routers import discovery, switches, rpis, hgws, topology, sync
 from app.services.sync_service import run_sync_now, get_sync_status
+from app.services.docker_sync_service import run_docker_sync_now, get_docker_sync_status
 
 
 # ─── Setup Logging ─────────────────────────────────────────
@@ -37,33 +38,38 @@ def _scheduler_loop() -> None:
     )
     last_run_date = None
 
+    # Docker sync cadence
+    DOCKER_SYNC_INTERVAL_S = 10 * 60
+    last_docker_sync_ts = 0.0
+
     while not _scheduler_stop.is_set():
         now = datetime.utcnow()
         today = now.date()
 
+        # Daily discovery run
         if (
             settings.SYNC_ENABLED
             and now.hour == settings.SYNC_HOUR
             and now.minute == settings.SYNC_MINUTE
             and last_run_date != today
         ):
-            logger.info(
-                "[SCHEDULER] Triggering scheduled daily sync at %s",
-                now.isoformat(),
-            )
+            logger.info("[SCHEDULER] Triggering scheduled daily sync at %s", now.isoformat())
             last_run_date = today
             try:
                 run_id = run_sync_now(triggered_by="scheduler")
-                logger.info(
-                    "[SCHEDULER] ✓ Scheduled sync completed (run_id=%d)",
-                    run_id,
-                )
+                logger.info("[SCHEDULER] ✓ Scheduled sync completed (run_id=%d)", run_id)
             except Exception as e:
-                logger.error(
-                    "[SCHEDULER] ✗ Scheduled sync failed: %s",
-                    str(e),
-                    exc_info=True,
-                )
+                logger.error("[SCHEDULER] ✗ Scheduled sync failed: %s", str(e), exc_info=True)
+
+        # Docker sync every 10 minutes (and also will run soon after run finishes)
+        import time as _time
+        if (_time.time() - last_docker_sync_ts) >= DOCKER_SYNC_INTERVAL_S:
+            last_docker_sync_ts = _time.time()
+            try:
+                run_docker_sync_now(triggered_by="docker_scheduler")
+            except Exception:
+                # never crash scheduler
+                pass
 
         _scheduler_stop.wait(timeout=30)
 

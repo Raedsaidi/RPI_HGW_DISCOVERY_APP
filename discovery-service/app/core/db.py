@@ -1,4 +1,3 @@
-# discovery-service/app/core/db.py
 import time
 import logging
 from sqlalchemy import create_engine, text
@@ -46,7 +45,9 @@ def wait_for_db(retries: int = 15, delay: float = 3.0) -> bool:
 
 
 def init_db() -> None:
-    from app.models import discovery_run, switch, rpi, hgw
+    # IMPORTANT: import models modules so SQLAlchemy registers tables
+    from app.models import discovery_run, switch, rpi, hgw, rpi_docker  # noqa: F401
+
     if not wait_for_db(retries=15, delay=3.0):
         raise RuntimeError("Cannot connect to MySQL after retries.")
 

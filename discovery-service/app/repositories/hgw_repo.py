@@ -119,12 +119,11 @@ class HgwRepository:
         )
 
     def save_fact(self, run_id: int, data: HgwCollectedData) -> HgwFact:
-        """Save HGW fact immediately (one-by-one commit)."""
         fact = HgwFact(
             run_id=run_id,
             hgw_ip=data.hgw_ip,
             via_rpi_ip=data.via_rpi_ip,
-            instance_key=data.instance_key,   # NEW
+            instance_key=data.instance_key,
             collected_at=datetime.utcnow(),
             manufacturer=data.manufacturer,
             model_name=data.model_name,
@@ -141,10 +140,18 @@ class HgwRepository:
             raw_deviceinfo=data.raw_deviceinfo,
             ssh_error=data.error if not data.success else None,
         )
+
         self.db.add(fact)
-        self.db.commit()
-        return fact
-    
+
+        try:
+            self.db.commit()
+            self.db.refresh(fact)
+            return fact
+
+        except Exception as e:
+            self.db.rollback()
+            raise e
+        
     def list_all(self) -> list[Hgw]:
         return self.db.query(Hgw).order_by(Hgw.ip).all()
 

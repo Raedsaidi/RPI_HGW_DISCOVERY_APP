@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy import BigInteger, Column, Integer, String, DateTime, Text
 from app.core.db import Base
-
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 
 class Hgw(Base):
     __tablename__ = "hgws"
@@ -56,5 +56,5 @@ class HgwFact(Base):
     country = Column(String(8), nullable=True)
     device_status = Column(String(32), nullable=True)
 
-    raw_deviceinfo = Column(Text, nullable=True)
-    ssh_error = Column(Text, nullable=True)
+    raw_deviceinfo = Column(MEDIUMTEXT, nullable=True)
+    ssh_error = Column(MEDIUMTEXT, nullable=True)

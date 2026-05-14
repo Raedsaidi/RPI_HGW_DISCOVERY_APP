@@ -230,16 +230,17 @@ class HgwTelnetSession:
     def connected(self) -> bool:
         return self._connected and self._tn is not None
 
+    LOGIN_RE = re.compile(rb"(username|login|user\s*name)\s*[:>]?\s*$", re.I | re.M)
+    PASS_RE  = re.compile(rb"password\s*[:>]?\s*$", re.I | re.M)
+    PROMPT_B = re.compile(rb"[>#]\s*$", re.M)
+    FAIL_RE  = re.compile(rb"(incorrect|failed|denied)", re.I)
+
     def connect(self) -> Tuple[bool, str]:
         started = time.perf_counter()
         try:
-            logger.info(
-                "[TELNET] Connecting to HGW %s:%s via tunnel",
-                self.hgw_ip, self.hgw_port,
-            )
-
             transport = self.tunnel_client.get_transport()
             if transport is None:
+                self._cleanup()
                 return False, "Tunnel transport not active."
 
             sock = transport.open_channel(
@@ -250,34 +251,43 @@ class HgwTelnetSession:
 
             self._tn = telnetlib.Telnet()
             self._tn.sock = sock
-            self._tn.rawq = b""
-            self._tn.cookedq = b""
-            self._tn.eof = False
-            self._tn.irawq = 0
 
-            idx, _, _ = self._tn.expect(
-                [b"Username:", b"username:", b"User:"],
-                timeout=self.timeout,
-            )
+            # Wake up telnet (beaucoup d'équipements n'affichent rien avant CRLF)
+            self._tn.write(b"\r\n")
+            time.sleep(0.2)
+
+            # Attends: login OU password OU prompt direct
+            idx, match, text = self._tn.expect([LOGIN_RE, PASS_RE, PROMPT_B], timeout=self.timeout)
             if idx == -1:
-                return False, "No username prompt received from HGW."
+                # Important: log du banner réel pour adapter les patterns
+                logger.warning("[TELNET][HGW] No prompt. Got=%r", text)
+                self._cleanup()
+                return False, "No username/login/password prompt received from HGW."
 
-            self._tn.write(self.username.encode("ascii") + b"\n")
+            # Déjà loggé ?
+            if idx == 2:
+                self._connected = True
+                return True, "OK"
 
-            idx2, _, _ = self._tn.expect(
-                [b"Password:", b"password:"],
-                timeout=self.timeout,
-            )
-            if idx2 == -1:
-                return False, "No password prompt received from HGW."
+            # Si on a login/username
+            if idx == 0:
+                self._tn.write(self.username.encode("ascii") + b"\r\n")
+                idx2, _, text2 = self._tn.expect([PASS_RE, PROMPT_B, FAIL_RE], timeout=self.timeout)
+                if idx2 == -1 or idx2 == 2:
+                    logger.warning("[TELNET][HGW] After username, got=%r", text2)
+                    self._cleanup()
+                    return False, "No password prompt (or auth failed) after sending username."
+                if idx2 == 1:
+                    self._connected = True
+                    return True, "OK"
 
-            self._tn.write(self.password.encode("ascii") + b"\n")
-
-            time.sleep(1.5)
-            try:
-                self._tn.read_very_eager()
-            except Exception:
-                pass
+            # Si on a directement password
+            self._tn.write(self.password.encode("ascii") + b"\r\n")
+            idx3, _, text3 = self._tn.expect([PROMPT_B, FAIL_RE], timeout=self.timeout)
+            if idx3 != 0:
+                logger.warning("[TELNET][HGW] After password, got=%r", text3)
+                self._cleanup()
+                return False, "Login failed or no shell prompt after password."
 
             self._connected = True
             elapsed = round(time.perf_counter() - started, 2)
@@ -286,7 +296,6 @@ class HgwTelnetSession:
 
         except Exception as e:
             self._cleanup()
-            logger.error("[TELNET] Connection failed to HGW %s: %s", self.hgw_ip, e)
             return False, str(e)
 
     def execute(self, command: str, idle_timeout: float = 3.0) -> Tuple[bool, str]:
