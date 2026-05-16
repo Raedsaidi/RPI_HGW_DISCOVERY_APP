@@ -23,6 +23,9 @@ class HgwCollectedData:
     hgw_ip: str
     via_rpi_ip: str
 
+    # RPi docker client container id/name when HGW is only reachable from that namespace
+    via_docker_container_id: Optional[str] = None
+
     # NEW: clé d’instance (set par DiscoveryService)
     instance_key: Optional[str] = None
 

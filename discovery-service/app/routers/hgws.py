@@ -19,11 +19,7 @@ router = APIRouter(prefix="/api/v1/hgws", tags=["HGWs"])
 @router.get("", response_model=HgwListResponse)
 def list_hgws(
     search: Optional[str] = Query(None, description="Search by IP, model, serial, external IP"),
-    network: Optional[str] = Query(
-        None,
-        description="Filter by network prefix (e.g., 192.168.1.x)",
-        example="192.168.1.x",
-    ),
+    network: Optional[str] = Query(None, description="Filter by network prefix (e.g., 192.168.1.x)"),
     manufacturer: Optional[str] = Query(None, description="Filter by manufacturer"),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
@@ -73,7 +69,6 @@ def get_hgw(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_read_access),
 ):
-    """Get details for a specific HGW (by IP or serial)."""
     hgw = HgwRepository(db).get_by_identifier(ip)
     if not hgw:
         raise HTTPException(status_code=404, detail="HGW not found.")
@@ -89,7 +84,6 @@ def get_hgw_history(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_read_access),
 ):
-    """Get historical DeviceInfo facts for a HGW (by IP or serial)."""
     hgw = HgwRepository(db).get_by_identifier(ip)
     if hgw and hgw.serial_number:
         q = db.query(HgwFact).filter(HgwFact.serial_number == hgw.serial_number)
@@ -151,7 +145,7 @@ def reconnect_hgw(
 
 
 # ─────────────────────────────────────────────────────────────
-# TERMINAL (FIX: use hgw_id, not IP)
+# TERMINAL (HGW by ID)
 # ─────────────────────────────────────────────────────────────
 @router.post("/{hgw_id}/terminal/open")
 def open_hgw_terminal(
@@ -178,7 +172,6 @@ def open_hgw_terminal(
 @router.get("/{hgw_id}/terminal/sessions")
 def list_hgw_terminal_sessions(
     hgw_id: int,
-    db: Session = Depends(get_db),
     current_user: dict = Depends(require_write_access),
 ):
     username = current_user["username"] if isinstance(current_user, dict) else current_user.username
@@ -188,7 +181,6 @@ def list_hgw_terminal_sessions(
 @router.post("/terminal/{session_id}/close")
 def close_hgw_terminal_session(
     session_id: str,
-    db: Session = Depends(get_db),
     current_user: dict = Depends(require_write_access),
 ):
     username = current_user["username"] if isinstance(current_user, dict) else current_user.username
@@ -205,7 +197,6 @@ def close_hgw_terminal_session(
 async def hgw_terminal_ws(websocket: WebSocket, session_id: str):
     await websocket.accept()
 
-    # auth first message
     try:
         raw = await asyncio.wait_for(websocket.receive_text(), timeout=10)
         msg = json.loads(raw)
@@ -231,9 +222,7 @@ async def hgw_terminal_ws(websocket: WebSocket, session_id: str):
         sess.add_client(websocket)
         sess.start_reader(asyncio.get_running_loop())
         await sess.send_buffer(websocket)
-        await websocket.send_text(
-            json.dumps({"type": "status", "status": sess.status, "error": sess.error}, ensure_ascii=False)
-        )
+        await websocket.send_text(json.dumps({"type": "status", "status": sess.status, "error": sess.error}, ensure_ascii=False))
 
         while True:
             try:

@@ -52,7 +52,26 @@ def init_db() -> None:
         raise RuntimeError("Cannot connect to MySQL after retries.")
 
     Base.metadata.create_all(bind=engine)
+    _apply_discovery_schema_patches()
     logger.info("[DB] Tables created/verified.")
+
+
+def _apply_discovery_schema_patches() -> None:
+    """Lightweight ALTERs for existing deployments (create_all does not add new columns)."""
+    from sqlalchemy import text
+
+    statements = [
+        "ALTER TABLE hgws ADD COLUMN via_docker_container_id VARCHAR(128) NULL",
+    ]
+    with engine.begin() as conn:
+        for sql in statements:
+            try:
+                conn.execute(text(sql))
+            except Exception as e:
+                msg = str(e).lower()
+                if "duplicate column" in msg or "1060" in msg:
+                    continue
+                logger.warning("[DB] schema patch skipped or failed: %s — %s", sql, e)
 
 
 def check_db_connection() -> bool:

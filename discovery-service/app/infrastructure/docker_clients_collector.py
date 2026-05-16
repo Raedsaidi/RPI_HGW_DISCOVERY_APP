@@ -7,19 +7,7 @@ from app.parsers.rpi_parser import clean
 
 
 class DockerClientsCollector:
-    """
-    Collect docker client/peer containers network info via RPi SSH session.
-    Compatible with your SSHSession (PTY + invoke_shell).
-
-    Commands used (as requested):
-      - docker ps
-      - lsusb | grep -i 'NetGear'
-      - lsusb | grep -i 'TP-Link'
-      - docker exec -it <id> /bin/bash -lc "ifconfig || ip a"
-      - docker exec -it <id> /bin/bash -lc "ip r s dev wlanX"
-    """
-
-    PREFIXES = ("client", "peer")
+    PREFIXES = ("client", "CLIENT", "peer", "PEER")
 
     _RE_DEFAULT_VIA = re.compile(r"\bdefault\s+via\s+(\d+\.\d+\.\d+\.\d+)\b", re.IGNORECASE)
 

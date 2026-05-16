@@ -390,6 +390,10 @@ class ReconnectService:
             logger.warning("[op=%s] HGW reconnect abort: via_rpi_ip missing", op_id)
             raise ValueError("via_rpi_ip is required (no known RPi to use as tunnel)")
 
+        dock = None
+        if hgw_record:
+            dock = (getattr(hgw_record, "via_docker_container_id", None) or "").strip() or None
+
         bastion_session = None
         rpi_session = None
         hgw_session = None
@@ -473,6 +477,7 @@ class ReconnectService:
                 password=settings.HGW_SSH_PASS,  # do not log
                 port=22,
                 tunnel=rpi_session._client,
+                tunnel_via_docker_container=dock,
                 timeout=60,
             )
             ok_h, msg_h = hgw_session.connect()
@@ -501,6 +506,7 @@ class ReconnectService:
                     password=settings.HGW_SSH_PASS,  # do not log
                     tunnel_client=rpi_session._client,
                     timeout=60,
+                    tunnel_via_docker_container=dock,
                 )
                 ok_t, msg_t = telnet_session.connect()
                 logger.info(
@@ -529,6 +535,8 @@ class ReconnectService:
                 logger.info("[op=%s] HGW collect start (telnet) target=%s", op_id, hgw_ip)
                 t3 = time.perf_counter()
                 info = HgwClient(telnet_session).collect_deviceinfo(hgw_ip, via_rpi_ip)
+                if hgw_record:
+                    info.via_docker_container_id = hgw_record.via_docker_container_id
                 logger.info(
                     "[op=%s] HGW collect done (telnet) success=%s elapsed_s=%.3f error=%s",
                     op_id,
@@ -540,6 +548,8 @@ class ReconnectService:
                 logger.info("[op=%s] HGW collect start (ssh) target=%s", op_id, hgw_ip)
                 t3 = time.perf_counter()
                 info = HgwClient(hgw_session).collect_deviceinfo(hgw_ip, via_rpi_ip)
+                if hgw_record:
+                    info.via_docker_container_id = hgw_record.via_docker_container_id
                 logger.info(
                     "[op=%s] HGW collect done (ssh) success=%s elapsed_s=%.3f error=%s",
                     op_id,
@@ -560,6 +570,7 @@ class ReconnectService:
                 hgw_ip,
                 via_rpi_ip=via_rpi_ip,
                 serial_number=info.serial_number,
+                via_docker_container_id=dock,
             )
 
             if info.success:

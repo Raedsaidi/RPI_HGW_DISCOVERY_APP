@@ -81,8 +81,7 @@ const HgwDetailModal = ({ open, onClose, hgwData }) => {
           <Row label="Model" value={hgwData.model_name} />
           <Row label="Serial Number" value={hgwData.serial_number} mono />
 
-          {/* NEW: instance_key (important when multiple HGWs share same IP) */}
-          <Row label="Instance Key" value={hgwData.instance_key} mono />
+          {/* <Row label="Instance Key" value={hgwData.instance_key} mono /> */}
 
           <Row label="SW Version" value={hgwData.software_version} />
           <Row label="HW Version" value={hgwData.hardware_version} />

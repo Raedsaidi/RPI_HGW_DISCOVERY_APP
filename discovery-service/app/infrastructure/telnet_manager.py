@@ -5,6 +5,8 @@ import telnetlib
 from typing import Optional, Tuple
 import paramiko
 
+from app.infrastructure.hgw_tunnel import open_hgw_tunnel_sock
+
 logger = logging.getLogger(__name__)
 
 ANSI_RE = re.compile(r"\x1b[[0-?][ -/][@-~]")
@@ -191,6 +193,7 @@ class HgwTelnetSession:
         password: str,
         tunnel_client: paramiko.SSHClient,
         timeout: int = 60,
+        tunnel_via_docker_container: Optional[str] = None,
     ):
         self.hgw_ip = hgw_ip
         self.hgw_port = hgw_port
@@ -198,6 +201,7 @@ class HgwTelnetSession:
         self.password = password
         self.tunnel_client = tunnel_client
         self.timeout = timeout
+        self.tunnel_via_docker_container = (tunnel_via_docker_container or "").strip() or None
 
         self._tn: Optional[telnetlib.Telnet] = None
         self._connected = False
@@ -210,18 +214,15 @@ class HgwTelnetSession:
         started = time.perf_counter()
         try:
             logger.info(
-                "[TELNET] Connecting to HGW %s:%s via tunnel",
-                self.hgw_ip, self.hgw_port,
+                "[TELNET] Connecting to HGW %s:%s via tunnel (docker_hop=%s)",
+                self.hgw_ip, self.hgw_port, bool(self.tunnel_via_docker_container),
             )
 
-            transport = self.tunnel_client.get_transport()
-            if transport is None:
-                return False, "Tunnel transport not active."
-
-            sock = transport.open_channel(
-                "direct-tcpip",
-                (self.hgw_ip, self.hgw_port),
-                ("127.0.0.1", 0),
+            sock = open_hgw_tunnel_sock(
+                self.tunnel_client,
+                self.hgw_ip,
+                self.hgw_port,
+                self.tunnel_via_docker_container,
             )
 
             self._tn = telnetlib.Telnet()

@@ -5,6 +5,8 @@ import re
 from typing import Optional, Tuple
 import paramiko
 
+from app.infrastructure.hgw_tunnel import open_hgw_tunnel_sock
+
 logger = logging.getLogger(__name__)
 
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -23,6 +25,7 @@ class SSHSession:
         password: str,
         port: int = 22,
         tunnel: Optional[paramiko.SSHClient] = None,
+        tunnel_via_docker_container: Optional[str] = None,
         timeout: int = 60,
     ):
         self.host = host
@@ -30,6 +33,7 @@ class SSHSession:
         self.password = password
         self.port = port
         self.tunnel = tunnel
+        self.tunnel_via_docker_container = (tunnel_via_docker_container or "").strip() or None
         self.timeout = timeout
 
         self._client: Optional[paramiko.SSHClient] = None
@@ -44,20 +48,19 @@ class SSHSession:
         started = time.perf_counter()
         try:
             logger.info(
-                "[SSH] Connecting to %s:%s (user=%s, tunnel=%s)",
+                "[SSH] Connecting to %s:%s (user=%s, tunnel=%s, docker_hop=%s)",
                 self.host, self.port, self.username,
                 self.tunnel is not None,
+                bool(self.tunnel_via_docker_container),
             )
 
             sock = None
             if self.tunnel:
-                transport = self.tunnel.get_transport()
-                if transport is None:
-                    return False, "Tunnel transport is not active."
-                sock = transport.open_channel(
-                    "direct-tcpip",
-                    (self.host, self.port),
-                    ("127.0.0.1", 0),
+                sock = open_hgw_tunnel_sock(
+                    self.tunnel,
+                    self.host,
+                    self.port,
+                    self.tunnel_via_docker_container,
                 )
 
             client = paramiko.SSHClient()
@@ -219,10 +222,12 @@ class SSHPool:
         password: str,
         port: int = 22,
         tunnel: Optional[paramiko.SSHClient] = None,
+        tunnel_via_docker_container: Optional[str] = None,
         timeout: int = 60,
     ) -> SSHSession:
         tunnel_id = id(tunnel) if tunnel is not None else None
-        key = (host, port, username, password, tunnel_id)
+        dock = (tunnel_via_docker_container or "").strip() or None
+        key = (host, port, username, password, tunnel_id, dock)
 
         if key not in self._sessions:
             sess = SSHSession(
@@ -231,6 +236,7 @@ class SSHPool:
                 password=password,
                 port=port,
                 tunnel=tunnel,
+                tunnel_via_docker_container=dock,
                 timeout=timeout,
             )
             self._sessions[key] = sess

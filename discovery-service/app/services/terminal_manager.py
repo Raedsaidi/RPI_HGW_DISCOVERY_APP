@@ -16,18 +16,20 @@ from jose import jwt, JWTError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.infrastructure.hgw_tunnel import open_hgw_tunnel_sock
+from app.infrastructure.channel_socket_adapter import ChannelSocketAdapter
 from app.models.rpi import Rpi
 from app.models.hgw import Hgw
 from app.models.switch import Switch
 
 # ── Policy ─────────────────────────────────────────────────────────────
-DETACHED_TTL_SECONDS = 20 * 60          # close session if detached too long
-HEARTBEAT_TTL_SECONDS = 10 * 60         # close if no ping/input/output seen
+DETACHED_TTL_SECONDS = 20 * 60
+HEARTBEAT_TTL_SECONDS = 10 * 60
 MAX_SESSION_LIFETIME_SECONDS = 12 * 60 * 60
 MAX_SESSIONS_PER_USER = 5
 
-BUFFER_MAX_CHARS = 2_000_000            # resume buffer cap
-BUFFER_SEND_SLICE_CHARS = 32_000        # send buffer in chunks
+BUFFER_MAX_CHARS = 2_000_000
+BUFFER_SEND_SLICE_CHARS = 32_000
 CLEANUP_INTERVAL_SECONDS = 30
 
 WRITE_ROLES = {"SUPER_ADMIN", "ADMIN", "PROJECT_MANAGER"}
@@ -59,13 +61,6 @@ def decode_jwt_user(token: str) -> dict:
         raise PermissionError(str(e))
 
 
-def open_tunnel_sock(tunnel_client: paramiko.SSHClient, host: str, port: int):
-    transport = tunnel_client.get_transport()
-    if transport is None:
-        raise ConnectionError("Tunnel transport not active")
-    return transport.open_channel("direct-tcpip", (host, port), ("127.0.0.1", 0))
-
-
 def ssh_connect_client(
     host: str,
     username: str,
@@ -73,10 +68,12 @@ def ssh_connect_client(
     port: int = 22,
     tunnel: Optional[paramiko.SSHClient] = None,
     timeout: int = 60,
+    tunnel_via_docker_container: Optional[str] = None,
+    keepalive_seconds: int = 20,
 ) -> paramiko.SSHClient:
     sock = None
     if tunnel is not None:
-        sock = open_tunnel_sock(tunnel, host, port)
+        sock = open_hgw_tunnel_sock(tunnel, host, port, tunnel_via_docker_container)
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -92,6 +89,15 @@ def ssh_connect_client(
         auth_timeout=timeout,
         sock=sock,
     )
+
+    # ✅ Keepalive (important for short random drops)
+    tr = client.get_transport()
+    if tr is not None:
+        try:
+            tr.set_keepalive(int(keepalive_seconds))
+        except Exception:
+            pass
+
     return client
 
 
@@ -118,17 +124,17 @@ class BaseTerminalSession:
     id: str
     owner: str
     device_type: str  # rpi|hgw|switch
-    target: str       # RPi: ip_mgmt | Switch: switch_id | HGW: hgw_id
+    target: str
 
     created_at: datetime = field(default_factory=utcnow)
 
-    last_activity_at: datetime = field(default_factory=utcnow)  # input/output only
-    last_seen_at: datetime = field(default_factory=utcnow)      # ping/input/output
+    last_activity_at: datetime = field(default_factory=utcnow)
+    last_seen_at: datetime = field(default_factory=utcnow)
 
     status: str = "connecting"  # connecting|ready|error|closed
     error: Optional[str] = None
 
-    clients: Set[Any] = field(default_factory=set)  # Set[WebSocket]
+    clients: Set[Any] = field(default_factory=set)
     detached_since: Optional[datetime] = None
 
     buffer: Deque[str] = field(default_factory=deque)
@@ -226,7 +232,6 @@ class BaseTerminalSession:
         self._reader_thread = th
         th.start()
 
-    # implemented in subclasses
     def _reader_loop(self): ...
     def send_input(self, data: str): ...
     def resize(self, cols: int, rows: int): ...
@@ -241,7 +246,7 @@ class SshTerminalSession(BaseTerminalSession):
     channel: Optional[paramiko.Channel] = None
 
     via_rpi_ip: Optional[str] = None
-    connect_host: Optional[str] = None  # real IP used for SSH
+    connect_host: Optional[str] = None
 
     def _reader_loop(self):
         try:
@@ -255,8 +260,10 @@ class SshTerminalSession(BaseTerminalSession):
 
             while not self._stop_event.is_set():
                 chan = self.channel
-                if chan is None or chan.closed:
-                    break
+                if chan is None:
+                    raise ConnectionError("SSH channel is None")
+                if chan.closed:
+                    raise ConnectionError("SSH channel closed")
 
                 if chan.recv_ready():
                     data = chan.recv(65535)
@@ -285,7 +292,7 @@ class SshTerminalSession(BaseTerminalSession):
                     self._loop,
                 )
         finally:
-            if self.status not in ("closed", "error"):
+            if self.status != "closed":
                 self.status = "closed"
                 if self._loop:
                     asyncio.run_coroutine_threadsafe(
@@ -301,7 +308,6 @@ class SshTerminalSession(BaseTerminalSession):
             raise ConnectionError("Terminal channel closed")
         if len(data) > 8000:
             data = data[:8000]
-
         chan.send(data)
         self.touch_io()
 
@@ -354,11 +360,11 @@ class TelnetTerminalSession(BaseTerminalSession):
 
             while not self._stop_event.is_set():
                 if not self.tn:
-                    break
+                    raise ConnectionError("Telnet session missing")
                 try:
                     chunk = self.tn.read_very_eager()
                 except EOFError:
-                    break
+                    raise ConnectionError("Telnet EOF (remote closed)")
                 except Exception:
                     chunk = b""
 
@@ -384,7 +390,7 @@ class TelnetTerminalSession(BaseTerminalSession):
                     self._loop,
                 )
         finally:
-            if self.status not in ("closed", "error"):
+            if self.status != "closed":
                 self.status = "closed"
                 if self._loop:
                     asyncio.run_coroutine_threadsafe(
@@ -446,19 +452,16 @@ class TerminalManager:
 
             with self._lock:
                 for sid, sess in list(self._sessions.items()):
-                    # hard max lifetime
                     life = (now - sess.created_at).total_seconds()
                     if life >= MAX_SESSION_LIFETIME_SECONDS:
                         to_close.append(sid)
                         continue
 
-                    # heartbeat ttl (ping/input/output)
                     seen_age = (now - sess.last_seen_at).total_seconds()
                     if seen_age >= HEARTBEAT_TTL_SECONDS:
                         to_close.append(sid)
                         continue
 
-                    # detached ttl
                     if sess.detached_since is not None:
                         detached_age = (now - sess.detached_since).total_seconds()
                         if detached_age >= DETACHED_TTL_SECONDS:
@@ -480,12 +483,7 @@ class TerminalManager:
         with self._lock:
             return self._sessions.get(session_id)
 
-    def list_user_sessions(
-        self,
-        username: str,
-        device_type: Optional[str] = None,
-        target: Optional[str] = None,
-    ) -> list[dict]:
+    def list_user_sessions(self, username: str, device_type: Optional[str] = None, target: Optional[str] = None) -> list[dict]:
         with self._lock:
             ids = list(self._user_index.get(username, set()))
             sessions = [self._sessions.get(sid) for sid in ids]
@@ -531,7 +529,6 @@ class TerminalManager:
         if not sess:
             return
 
-        # close WS clients (best-effort)
         if sess._loop:
             try:
                 asyncio.run_coroutine_threadsafe(sess.close_ws_clients(), sess._loop)
@@ -544,7 +541,7 @@ class TerminalManager:
             pass
 
     # ──────────────────────────────────────────────────────────
-    # Session OPEN (RPi / HGW / Switch)
+    # OPEN (RPi / Switch / HGW)
     # ──────────────────────────────────────────────────────────
     def open_rpi(self, db: Session, owner: str, rpi_ip: str) -> SshTerminalSession:
         if self._count_user_sessions(owner) >= MAX_SESSIONS_PER_USER:
@@ -566,6 +563,7 @@ class TerminalManager:
             port=22,
             tunnel=None,
             timeout=60,
+            keepalive_seconds=20,
         )
         sess.bastion_client = bastion
 
@@ -581,6 +579,7 @@ class TerminalManager:
                     port=22,
                     tunnel=bastion,
                     timeout=60,
+                    keepalive_seconds=20,
                 )
                 break
             except Exception as e:
@@ -615,6 +614,7 @@ class TerminalManager:
             port=22,
             tunnel=None,
             timeout=60,
+            keepalive_seconds=20,
         )
         sess.bastion_client = bastion
 
@@ -623,7 +623,9 @@ class TerminalManager:
             sess.close()
             raise ConnectionError("Bastion transport not active")
 
-        sock = transport.open_channel("direct-tcpip", (sw.ip, sw.telnet_port), ("127.0.0.1", 0))
+        # ✅ FIX: paramiko.Channel != socket; telnetlib needs sendall()
+        chan = transport.open_channel("direct-tcpip", (sw.ip, int(sw.telnet_port)), ("127.0.0.1", 0))
+        sock = ChannelSocketAdapter(chan)
 
         tn = telnetlib.Telnet()
         tn.sock = sock
@@ -636,13 +638,13 @@ class TerminalManager:
         if idx == -1:
             sess.close()
             raise ConnectionError("No username prompt received from switch")
-        tn.write(sw.telnet_user.encode("ascii", errors="ignore") + b"\n")
+        tn.write(sw.telnet_user.encode("ascii", errors="ignore") + b"\r\n")
 
         idx2, _, _ = tn.expect([b"Password:", b"password:"], timeout=20)
         if idx2 == -1:
             sess.close()
             raise ConnectionError("No password prompt received from switch")
-        tn.write(sw.telnet_pass.encode("ascii", errors="ignore") + b"\n")
+        tn.write(sw.telnet_pass.encode("ascii", errors="ignore") + b"\r\n")
 
         time.sleep(1.0)
         try:
@@ -654,7 +656,6 @@ class TerminalManager:
         self.register(sess)
         return sess
 
-    # ✅ FIX: open HGW by unique DB id (prevents collisions with duplicate IP)
     def open_hgw(self, db: Session, owner: str, hgw_id: int, via_rpi_ip: Optional[str] = None) -> SshTerminalSession:
         if self._count_user_sessions(owner) >= MAX_SESSIONS_PER_USER:
             raise PermissionError("Max sessions per user reached (5). Close a session first.")
@@ -668,13 +669,15 @@ class TerminalManager:
         if not via:
             raise ValueError("Cannot auto-select via_rpi_ip for this HGW")
 
+        dock = (getattr(hgw_row, "via_docker_container_id", None) or "").strip() or None
+
         sid = str(uuid4())
         sess = SshTerminalSession(
             id=sid,
             owner=owner,
             device_type="hgw",
-            target=str(hgw_id),   # unique target
-            connect_host=hgw_ip,  # real host for SSH
+            target=str(hgw_id),
+            connect_host=hgw_ip,
             via_rpi_ip=via,
         )
 
@@ -685,6 +688,7 @@ class TerminalManager:
             port=22,
             tunnel=None,
             timeout=60,
+            keepalive_seconds=20,
         )
         sess.bastion_client = bastion
 
@@ -700,6 +704,7 @@ class TerminalManager:
                     port=22,
                     tunnel=bastion,
                     timeout=60,
+                    keepalive_seconds=20,
                 )
                 break
             except Exception as e:
@@ -719,6 +724,8 @@ class TerminalManager:
             port=22,
             tunnel=rpi_client,
             timeout=60,
+            tunnel_via_docker_container=dock,
+            keepalive_seconds=20,
         )
         sess.target_client = hgw_client
         sess.channel = open_pty_shell(hgw_client, timeout=60)

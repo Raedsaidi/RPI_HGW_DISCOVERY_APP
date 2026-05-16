@@ -39,6 +39,8 @@ class RpiCollectedData:
     lan_ip: Optional[str] = None
     lan_mac: Optional[str] = None
     hgw_ip: Optional[str] = None
+    # docker ps container id (or name) when hgw_ip was resolved by method3
+    hgw_via_docker_container: Optional[str] = None
 
     # MAC de la gateway (vue depuis le RPi)
     hgw_gateway_mac: Optional[str] = None
@@ -75,23 +77,12 @@ class RpiCollectedData:
 
 
 class RpiClient:
-    """
-    High-level client for collecting data from a Raspberry Pi
-    using a persistent SSH session.
-
-    HGW detection fallback chain:
-      1) ip a -> parse LAN iface -> ip r s dev <iface> -> default via <HGW>
-      2) ip neigh -> find IPv6 "router" MAC -> match same MAC on IPv4 -> <HGW>
-      3) docker clients/peers -> docker ps -> per container:
-           docker exec -it <id> /bin/bash -lc "ifconfig || ip a"
-           find wlanX -> docker exec -it <id> /bin/bash -lc "ip r s dev wlanX"
-    """
 
     # Container name prefixes to inspect in method (3)
-    DOCKER_CLIENT_PREFIXES = ("client", "peer")
+    DOCKER_CLIENT_PREFIXES = ("client", "CLIENT", "peer", "PEER")
 
     # Keywords to count wifi dongles lines in lsusb (logs only)
-    WIFI_USB_KEYWORDS = ("netgear", "tp-link")
+    WIFI_USB_KEYWORDS = ("netgear", "tp-link", "realtek", "rtl", "wireless", "wi-fi", "wifi", "wlan", "Netgear" , "TP-Link", "Realtek", "RTL", "Wireless", "Wi-Fi", "WiFi", "WLAN")
 
     def __init__(self, session: SSHSession):
         self.session = session
@@ -291,15 +282,19 @@ class RpiClient:
 
         return results
 
-    def _get_hgw_from_docker_clients(self, ip_mgmt: str) -> Optional[str]:
+    def _get_hgw_from_docker_clients(self, ip_mgmt: str) -> tuple[Optional[str], Optional[str]]:
+        """
+        Returns (hgw_ip, docker_container_id) when the default gateway is found from a client*/peer* container.
+        docker_container_id is the docker ps CONTAINER ID (or resolvable name) used for docker exec on the RPi.
+        """
         # 1) docker ps
         ok_ps, docker_ps_raw = self.session.execute("docker ps 2>&1", timeout=20, idle_timeout=3.0)
         if not ok_ps or not (docker_ps_raw or "").strip():
-            return None
+            return None, None
 
         docker_usable, containers = parse_docker_ps(docker_ps_raw)
         if not docker_usable:
-            return None
+            return None, None
 
         # Filter by prefixes client*/peer*
         targets = []
@@ -318,7 +313,7 @@ class RpiClient:
         )
 
         if not targets:
-            return None
+            return None, None
 
         # 2) lsusb (logs only)
         ok_usb, usb_raw = self.session.execute("lsusb 2>/dev/null || echo ''", timeout=10, idle_timeout=2.5)
@@ -372,30 +367,53 @@ class RpiClient:
         logger.info("[RPI] %s: method3 docker wlan details=%s", ip_mgmt, all_details)
 
         if not gw_candidates:
-            return None
+            return None, None
 
         uniq = sorted(set(gw_candidates))
         if len(uniq) == 1:
             chosen = uniq[0]
-            logger.info("[RPI] %s: HGW resolved by method3(docker)=%s", ip_mgmt, chosen)
-            return chosen
+        else:
+            # If multiple gateways: pick most common, log warning with all candidates
+            counts = {gw: gw_candidates.count(gw) for gw in uniq}
+            max_count = max(counts.values())
+            winners = [gw for gw, c in counts.items() if c == max_count]
+            chosen = None
+            for gw in gw_candidates:
+                if gw in winners:
+                    chosen = gw
+                    break
+            chosen = chosen or gw_candidates[0]
 
-        # If multiple gateways: pick most common, log warning with all candidates
-        counts = {gw: gw_candidates.count(gw) for gw in uniq}
-        max_count = max(counts.values())
-        winners = [gw for gw, c in counts.items() if c == max_count]
-        chosen = None
-        for gw in gw_candidates:
-            if gw in winners:
-                chosen = gw
+            logger.warning(
+                "[RPI] %s: method3 multiple gateway candidates uniq=%s counts=%s -> chosen=%s",
+                ip_mgmt, uniq, counts, chosen
+            )
+
+        chosen_cid: Optional[str] = None
+        for block in all_details:
+            bid = block.get("id")
+            for wi in block.get("wlan") or []:
+                if wi.get("gw") == chosen and bid:
+                    chosen_cid = str(bid).strip()
+                    break
+            if chosen_cid:
                 break
-        chosen = chosen or gw_candidates[0]
 
-        logger.warning(
-            "[RPI] %s: method3 multiple gateway candidates uniq=%s counts=%s -> chosen=%s",
-            ip_mgmt, uniq, counts, chosen
+        if chosen and not chosen_cid and len(targets) == 1:
+            chosen_cid = str(targets[0]["id"]).strip()
+            logger.warning(
+                "[RPI] %s: method3 could not map gateway to container; single client container -> %s",
+                ip_mgmt,
+                chosen_cid,
+            )
+
+        logger.info(
+            "[RPI] %s: HGW resolved by method3(docker) ip=%s container_id=%s",
+            ip_mgmt,
+            chosen,
+            chosen_cid,
         )
-        return chosen
+        return chosen, chosen_cid
 
     # ──────────────────────────────────────────────────────────────
     # Gateway MAC (works even if lan_iface unknown)
@@ -470,10 +488,12 @@ class RpiClient:
                 method_used = "method2"
 
         # Method3
+        hgw_via_docker: Optional[str] = None
         if not hgw_ip:
-            hgw3 = self._get_hgw_from_docker_clients(ip_mgmt)
+            hgw3, dock3 = self._get_hgw_from_docker_clients(ip_mgmt)
             if hgw3:
                 hgw_ip = hgw3
+                hgw_via_docker = dock3
                 method_used = "method3"
 
         if hgw_ip:
@@ -541,6 +561,7 @@ class RpiClient:
             lan_ip=lan_ip,
             lan_mac=lan_mac,
             hgw_ip=hgw_ip,
+            hgw_via_docker_container=hgw_via_docker,
             hgw_gateway_mac=hgw_gateway_mac,
             all_ips=json.dumps(all_ips),
             temp_celsius=temp,

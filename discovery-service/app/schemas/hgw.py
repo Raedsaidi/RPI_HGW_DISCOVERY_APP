@@ -17,6 +17,7 @@ class HgwRead(BaseModel):
     id: int
     ip: str
     via_rpi_ip: Optional[str] = None
+    via_docker_container_id: Optional[str] = None
     manufacturer: Optional[str] = None
     model_name: Optional[str] = None
     serial_number: Optional[str] = None

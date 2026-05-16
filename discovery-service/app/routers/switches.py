@@ -124,38 +124,6 @@ def get_switch_rpis(
     return [r for r in rpis if r.switch_ip == sw.ip]
 
 
-@router.get("/{switch_id}/macs")
-def get_switch_macs(
-    switch_id: int,
-    run_id: Optional[int] = Query(None, description="Filter by run_id, default = latest"),
-    port: Optional[str] = Query(None, description="Filter by port (ex: g1, g7)"),
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(require_read_access),
-):
-    from app.repositories.discovery_repo import DiscoveryRepository
-    from app.models.switch import SwitchMacEntry
-
-    sw = SwitchRepository(db).get_by_id(switch_id)
-    if not sw:
-        raise HTTPException(status_code=404, detail="Switch not found.")
-
-    if run_id is None:
-        runs = DiscoveryRepository(db).list_runs(skip=0, limit=1)
-        if not runs:
-            return []
-        run_id = runs[0].id
-
-    q = db.query(SwitchMacEntry).filter(
-        SwitchMacEntry.switch_ip == sw.ip,
-        SwitchMacEntry.run_id == run_id,
-    )
-
-    if port:
-        q = q.filter(SwitchMacEntry.port == port)
-
-    return q.order_by(SwitchMacEntry.port).all()
-
-
 @router.post("/{switch_id}/reconnect")
 def reconnect_switch(
     switch_id: int,
@@ -190,7 +158,6 @@ def open_switch_terminal(
 @router.get("/{switch_id}/terminal/sessions")
 def list_switch_terminal_sessions(
     switch_id: int,
-    db: Session = Depends(get_db),
     current_user: dict = Depends(require_write_access),
 ):
     username = current_user["username"] if isinstance(current_user, dict) else current_user.username
@@ -200,7 +167,6 @@ def list_switch_terminal_sessions(
 @router.post("/terminal/{session_id}/close")
 def close_switch_terminal_session(
     session_id: str,
-    db: Session = Depends(get_db),
     current_user: dict = Depends(require_write_access),
 ):
     username = current_user["username"] if isinstance(current_user, dict) else current_user.username
@@ -242,9 +208,7 @@ async def switch_terminal_ws(websocket: WebSocket, session_id: str):
         sess.add_client(websocket)
         sess.start_reader(asyncio.get_running_loop())
         await sess.send_buffer(websocket)
-        await websocket.send_text(
-            json.dumps({"type": "status", "status": sess.status, "error": sess.error}, ensure_ascii=False)
-        )
+        await websocket.send_text(json.dumps({"type": "status", "status": sess.status, "error": sess.error}, ensure_ascii=False))
 
         while True:
             try:

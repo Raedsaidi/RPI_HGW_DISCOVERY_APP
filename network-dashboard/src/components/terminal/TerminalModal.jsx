@@ -16,6 +16,8 @@ const chunkString = (str, size) => {
   return out
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
 const TerminalModal = ({
   open,
   onClose,
@@ -31,8 +33,16 @@ const TerminalModal = ({
   wsPathForSession,
 
   autoStart = true,
-  pingIntervalMs = 25000,
+
+  // ✅ plus robuste contre proxy/NAT agressif
+  pingIntervalMs = 5000,
+
   inputChunkSize = 1500,
+
+  // reconnect
+  autoReconnect = true,
+  reconnectDelayMs = 1200,
+  reconnectMaxAttempts = 5,
 }) => {
   const termDivRef = useRef(null)
   const xtermRef = useRef(null)
@@ -46,6 +56,9 @@ const TerminalModal = ({
 
   const lastListedSessionsRef = useRef([])
   const [activeSessionId, setActiveSessionId] = useState(null)
+
+  const reconnectAttemptsRef = useRef(0)
+  const wantReconnectRef = useRef(false)
 
   const wsBase = useMemo(() => toWsBase(import.meta.env.VITE_DISCOVERY_URL), [])
 
@@ -117,7 +130,9 @@ const TerminalModal = ({
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const cleanupWsAndHandlers = useCallback(() => {
+  const cleanupWsAndHandlers = useCallback((opts = { disposeXterm: false }) => {
+    wantReconnectRef.current = false
+
     try { clearInterval(pingTimerRef.current) } catch {}
     pingTimerRef.current = null
 
@@ -130,6 +145,12 @@ const TerminalModal = ({
     if (resizeHandlerRef.current) {
       window.removeEventListener('resize', resizeHandlerRef.current)
       resizeHandlerRef.current = null
+    }
+
+    if (opts.disposeXterm) {
+      try { xtermRef.current?.dispose?.() } catch {}
+      xtermRef.current = null
+      fitRef.current = null
     }
   }, [])
 
@@ -146,18 +167,26 @@ const TerminalModal = ({
     if (!sessionId) return
 
     initXterm()
-    cleanupWsAndHandlers()
+    cleanupWsAndHandlers({ disposeXterm: false })
+
+    reconnectAttemptsRef.current = 0
+    wantReconnectRef.current = true
 
     setActiveSessionId(sessionId)
     xtermRef.current.clear()
-
     termPrint(`Connecting (session=${sessionId}) ...`)
 
     const wsUrl = `${wsBase}${wsPathForSession(sessionId)}`
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
+    const sendPing = () => {
+      try { wsRef.current?.send(JSON.stringify({ type: 'ping' })) } catch {}
+    }
+
     ws.onopen = () => {
+      reconnectAttemptsRef.current = 0
+
       const token = localStorage.getItem('nd_access_token')
       if (!token) {
         termPrint('ERROR: missing token (nd_access_token)')
@@ -177,9 +206,9 @@ const TerminalModal = ({
         ws.send(JSON.stringify({ type: 'resize', cols, rows }))
       } catch {}
 
-      pingTimerRef.current = setInterval(() => {
-        try { wsRef.current?.send(JSON.stringify({ type: 'ping' })) } catch {}
-      }, pingIntervalMs)
+      // ✅ ping immédiat + interval
+      sendPing()
+      pingTimerRef.current = setInterval(sendPing, pingIntervalMs)
     }
 
     ws.onmessage = (ev) => {
@@ -195,16 +224,42 @@ const TerminalModal = ({
           termPrint(`ERROR: ${msg.error || 'terminal error'}`)
         } else if (msg.status === 'closed') {
           termPrint('SESSION CLOSED by server.')
-          cleanupWsAndHandlers()
+          cleanupWsAndHandlers({ disposeXterm: false })
         }
       }
     }
 
     ws.onerror = () => termPrint('WS ERROR')
-    ws.onclose = () => {
-      termPrint('WS CLOSED (resume: Ctrl+Shift+S then Alt+<n>)')
+
+    ws.onclose = async () => {
       try { clearInterval(pingTimerRef.current) } catch {}
       pingTimerRef.current = null
+
+      termPrint('WS CLOSED')
+
+      if (!open) return
+      if (!autoReconnect) return
+      if (!wantReconnectRef.current) return
+      if (!activeSessionId) return
+
+      reconnectAttemptsRef.current += 1
+      if (reconnectAttemptsRef.current > reconnectMaxAttempts) {
+        termPrint(`Reconnect failed after ${reconnectMaxAttempts} attempts.`)
+        return
+      }
+
+      termPrint(`Reconnecting... attempt ${reconnectAttemptsRef.current}/${reconnectMaxAttempts}`)
+      await sleep(reconnectDelayMs)
+
+      // Reattach if session still exists, else open new
+      const list = await loadSessions()
+      const stillThere = list.find((s) => s.session_id === activeSessionId)
+      if (stillThere) {
+        await attach(activeSessionId)
+      } else {
+        termPrint('Session not found on server anymore. Creating a new session...')
+        await handleNewSession()
+      }
     }
 
     onDataDisposableRef.current = xtermRef.current.onData((data) => {
@@ -225,13 +280,18 @@ const TerminalModal = ({
     resizeHandlerRef.current = onResize
     window.addEventListener('resize', onResize)
   }, [
+    activeSessionId,
+    autoReconnect,
     cleanupWsAndHandlers,
     deviceType,
     initXterm,
     inputChunkSize,
+    loadSessions,
     pingIntervalMs,
-    targetLabel,
+    reconnectDelayMs,
+    reconnectMaxAttempts,
     targetKey,
+    targetLabel,
     title,
     termPrint,
     wsBase,
@@ -282,7 +342,7 @@ const TerminalModal = ({
     termPrint(`Closing session ${activeSessionId} ...`)
     try {
       await apiClose(activeSessionId)
-      cleanupWsAndHandlers()
+      cleanupWsAndHandlers({ disposeXterm: false })
       setActiveSessionId(null)
       termPrint('Session closed.')
     } catch (e) {
@@ -311,7 +371,7 @@ const TerminalModal = ({
   useEffect(() => {
     if (!open) {
       openedOnceRef.current = false
-      cleanupWsAndHandlers()
+      cleanupWsAndHandlers({ disposeXterm: true })
       return
     }
 
@@ -326,7 +386,7 @@ const TerminalModal = ({
 
     return () => {
       document.body.style.overflow = prevOverflow
-      cleanupWsAndHandlers()
+      cleanupWsAndHandlers({ disposeXterm: true })
     }
   }, [open, autoStart, cleanupWsAndHandlers, openWithResumeOrNew, handleListSessions])
 

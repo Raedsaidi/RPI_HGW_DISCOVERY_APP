@@ -35,6 +35,7 @@ class HgwRepository:
         ip: str,
         via_rpi_ip: Optional[str] = None,
         serial_number: Optional[str] = None,
+        via_docker_container_id: Optional[str] = None,
     ) -> Hgw:
         """
         Crée ou met à jour une HGW.
@@ -48,6 +49,7 @@ class HgwRepository:
                 ip=ip,
                 via_rpi_ip=via_rpi_ip,
                 serial_number=serial_number,
+                via_docker_container_id=via_docker_container_id,
                 created_at=datetime.utcnow(),
             )
             self.db.add(hgw)
@@ -58,6 +60,7 @@ class HgwRepository:
                 hgw.via_rpi_ip = via_rpi_ip
             if serial_number:
                 hgw.serial_number = serial_number
+            hgw.via_docker_container_id = via_docker_container_id
 
         self.db.commit()
         self.db.refresh(hgw)
@@ -82,6 +85,7 @@ class HgwRepository:
         hgw.ip = data.hgw_ip or hgw.ip
         if data.via_rpi_ip:
             hgw.via_rpi_ip = data.via_rpi_ip
+        hgw.via_docker_container_id = data.via_docker_container_id
 
         hgw.manufacturer = data.manufacturer
         hgw.model_name = data.model_name

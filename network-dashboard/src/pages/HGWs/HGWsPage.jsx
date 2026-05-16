@@ -163,12 +163,12 @@ const HGWsPage = () => {
       title: 'SW Version',
       render: (val) => val || <span className="hgw-table__null">—</span>,
     },
-    {
+    /* {
       key: 'external_ip',
       title: 'External IP',
       render: (val) =>
         val ? <span className="hgw-table__mono hgw-table__mono--ext">{val}</span> : <span className="hgw-table__null">—</span>,
-    },
+    }, */
     {
       key: 'via_rpi_ip',
       title: 'Via RPi',

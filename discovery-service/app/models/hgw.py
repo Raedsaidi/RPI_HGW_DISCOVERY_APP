@@ -10,6 +10,8 @@ class Hgw(Base):
     ip = Column(String(64), nullable=False)
 
     via_rpi_ip = Column(String(64), nullable=True)
+    # When set, HGW is reached via: RPi -> docker exec -i <id> -> TCP to hgw ip:22 (method3 / wlan in container)
+    via_docker_container_id = Column(String(128), nullable=True)
     last_seen = Column(DateTime, nullable=True)
 
     manufacturer = Column(String(128), nullable=True)

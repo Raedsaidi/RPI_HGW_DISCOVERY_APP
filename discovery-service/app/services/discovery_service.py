@@ -989,6 +989,7 @@ class DiscoveryService:
                             instance_key=instance_key,
                             rpi_session=rpi_session,
                             counters=counters,
+                            via_docker_container_id=collected.hgw_via_docker_container,
                         )
 
             except ConnectionError as e:
@@ -1045,6 +1046,7 @@ class DiscoveryService:
         instance_key: str,
         rpi_session: SSHSession,
         counters: dict,
+        via_docker_container_id: Optional[str] = None,
     ) -> None:
         """
         Collecte les infos HGW via un RPi donné, immédiatement après la collecte RPi.
@@ -1072,6 +1074,7 @@ class DiscoveryService:
 
         collected_data: Optional[HgwCollectedData] = None
         last_error: Optional[str] = None
+        dock = (via_docker_container_id or "").strip() or None
 
         try:
             rpi_client_obj = rpi_session._client
@@ -1082,6 +1085,7 @@ class DiscoveryService:
                 password=settings.HGW_SSH_PASS,
                 port=22,
                 tunnel=rpi_client_obj,
+                tunnel_via_docker_container=dock,
                 timeout=60,
             )
             hgw_conn = hgw_session
@@ -1111,6 +1115,7 @@ class DiscoveryService:
                             password=settings.HGW_SSH_PASS,
                             tunnel_client=rpi_client_obj,
                             timeout=60,
+                            tunnel_via_docker_container=dock,
                         )
                         ok_t, err_t = telnet_fallback.connect()
                         if not ok_t:
@@ -1122,6 +1127,7 @@ class DiscoveryService:
 
                 # Attacher l'instance_key pour la persistance + topologie
                 setattr(hgw_data, "instance_key", instance_key)
+                hgw_data.via_docker_container_id = dock
 
                 collected_data = hgw_data
 
@@ -1181,6 +1187,7 @@ class DiscoveryService:
                 collected_data.hgw_ip,
                 via_rpi_ip=collected_data.via_rpi_ip,
                 serial_number=collected_data.serial_number,
+                via_docker_container_id=collected_data.via_docker_container_id,
             )
 
             # Mise à jour des champs HGW à partir du fact

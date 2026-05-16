@@ -87,7 +87,6 @@ def list_rpis(
     return {"data": result, "total": total, "page": page, "page_size": page_size, "total_pages": total_pages}
 
 
-# ✅ NEW: list ALL RPi terminal sessions for current user (used by RPisPage to highlight active)
 @router.get("/terminal/sessions")
 def list_all_rpi_terminal_sessions(
     db: Session = Depends(get_db),
@@ -154,10 +153,7 @@ def submit_rpi_credentials(
         submitted_by=current_user["username"],
     )
     return {
-        "message": (
-            f"Credentials saved for RPi {body.rpi_ip_mgmt}. "
-            f"Will be tried first in the next discovery run."
-        ),
+        "message": f"Credentials saved for RPi {body.rpi_ip_mgmt}. Will be tried first in the next discovery run.",
         "rpi_ip": body.rpi_ip_mgmt,
     }
 
@@ -177,12 +173,7 @@ def delete_rpi_credentials(
     rpi.custom_ssh_pass = None
     db.commit()
 
-    return {
-        "message": (
-            f"Custom credentials removed for RPi {ip_mgmt}. "
-            f"Will try pi/raspberry then root/sah."
-        )
-    }
+    return {"message": f"Custom credentials removed for RPi {ip_mgmt}. Will try pi/raspberry then root/sah."}
 
 
 @router.post("/{ip_mgmt}/reconnect")
@@ -229,7 +220,6 @@ def list_rpi_terminal_sessions(
 @router.post("/terminal/{session_id}/close")
 def close_rpi_terminal_session(
     session_id: str,
-    db: Session = Depends(get_db),
     current_user: dict = Depends(require_write_access),
 ):
     username = current_user["username"] if isinstance(current_user, dict) else current_user.username
@@ -271,9 +261,7 @@ async def rpi_terminal_ws(websocket: WebSocket, session_id: str):
         sess.add_client(websocket)
         sess.start_reader(asyncio.get_running_loop())
         await sess.send_buffer(websocket)
-        await websocket.send_text(
-            json.dumps({"type": "status", "status": sess.status, "error": sess.error}, ensure_ascii=False)
-        )
+        await websocket.send_text(json.dumps({"type": "status", "status": sess.status, "error": sess.error}, ensure_ascii=False))
 
         while True:
             try:

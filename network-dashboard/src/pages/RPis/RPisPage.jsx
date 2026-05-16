@@ -69,6 +69,10 @@ const RPisPage = () => {
   /* ✅ active terminal sessions (attached>0) */
   const [activeRpiIps, setActiveRpiIps] = useState(() => new Set())
 
+  /* ✅ Global stats (for page 1 totals) */
+  const [globalStats, setGlobalStats] = useState({ sshOk: 0, sshFail: 0, customCreds: 0 })
+  const [globalStatsReady, setGlobalStatsReady] = useState(false)
+
   const fetchActiveRpiSessions = useCallback(async () => {
     try {
       const res = await rpisApi.terminalSessionsAll()
@@ -84,8 +88,59 @@ const RPisPage = () => {
     }
   }, [])
 
+  const computeStatsFromArray = (arr) => {
+    let sshOk = 0
+    let sshFail = 0
+    let customCreds = 0
+
+    for (const r of arr) {
+      if (r?.last_ssh_success === true) sshOk += 1
+      else if (r?.last_ssh_success === false) sshFail += 1
+      if (r?.has_custom_credentials) customCreds += 1
+    }
+    return { sshOk, sshFail, customCreds }
+  }
+
+  // ✅ Fetch global stats (all pages) only when needed (table + page 1)
+  const fetchGlobalStats = useCallback(async (baseParams) => {
+    const PAGE_SIZE_STATS = 100
+    try {
+      let p = 1
+      let tp = 1
+      let sshOk = 0
+      let sshFail = 0
+      let customCreds = 0
+
+      while (true) {
+        const res = await rpisApi.list({ ...baseParams, page: p, page_size: PAGE_SIZE_STATS })
+        const chunk = res.data?.data || []
+
+        for (const r of chunk) {
+          if (r?.last_ssh_success === true) sshOk += 1
+          else if (r?.last_ssh_success === false) sshFail += 1
+          if (r?.has_custom_credentials) customCreds += 1
+        }
+
+        tp = res.data?.total_pages || 1
+        if (p >= tp) break
+        p += 1
+      }
+
+      setGlobalStats({ sshOk, sshFail, customCreds })
+      setGlobalStatsReady(true)
+    } catch (e) {
+      console.error(e)
+      setGlobalStats({ sshOk: 0, sshFail: 0, customCreds: 0 })
+      setGlobalStatsReady(false)
+    }
+  }, [])
+
   const fetchRpis = useCallback(async () => {
     setLoading(true)
+
+    // on invalide les stats globales à chaque fetch (elles seront recalculées si nécessaire)
+    setGlobalStatsReady(false)
+
     try {
       const baseParams = {}
       if (search.trim()) baseParams.search = search.trim()
@@ -96,39 +151,49 @@ const RPisPage = () => {
         const PAGE_SIZE_SWITCH = 100
         let all = []
         let p = 1
-        let total = 0
-        let totalPages = 1
+        let totalAll = 0
+        let totalPagesAll = 1
 
         while (true) {
           const res = await rpisApi.list({ ...baseParams, page: p, page_size: PAGE_SIZE_SWITCH })
           const chunk = res.data.data || []
           all = all.concat(chunk)
 
-          total = res.data.total || all.length
-          totalPages = res.data.total_pages || 1
+          totalAll = res.data.total || all.length
+          totalPagesAll = res.data.total_pages || 1
 
-          if (p >= totalPages) break
+          if (p >= totalPagesAll) break
           p += 1
         }
 
         setData(all)
-        setTotal(total)
+        setTotal(totalAll)
         setTotalPages(1)
-        setPage(1)
+
+        // en switch view : data == tout => stats globales direct
+        const st = computeStatsFromArray(all)
+        setGlobalStats(st)
+        setGlobalStatsReady(true)
       } else {
         const res = await rpisApi.list({ ...baseParams, page, page_size: PAGE_SIZE })
-        setData(res.data.data || [])
+        const pageData = res.data.data || []
+
+        setData(pageData)
         setTotal(res.data.total || 0)
         setTotalPages(res.data.total_pages || 1)
+
+        // ✅ Ici : si on est sur la 1ère page, on calcule les totaux globaux (toutes pages)
+        if (page === 1) {
+          await fetchGlobalStats(baseParams)
+        }
       }
     } catch (e) {
       console.error(e)
     } finally {
       setLoading(false)
-      // ✅ refresh active session markers
       fetchActiveRpiSessions()
     }
-  }, [page, search, filterSsh, filterCreds, viewMode, fetchActiveRpiSessions])
+  }, [page, search, filterSsh, filterCreds, viewMode, fetchActiveRpiSessions, fetchGlobalStats])
 
   useEffect(() => {
     fetchRpis()
@@ -140,9 +205,18 @@ const RPisPage = () => {
     return () => clearInterval(t)
   }, [fetchActiveRpiSessions])
 
-  const handleSearch = (val) => { setSearch(val); setPage(1) }
-  const handleSshFilter = (val) => { setFilterSsh(val); setPage(1) }
-  const handleCredsFilter = (val) => { setFilterCreds(val); setPage(1) }
+  const handleSearch = (val) => {
+    setSearch(val)
+    setPage(1)
+  }
+  const handleSshFilter = (val) => {
+    setFilterSsh(val)
+    setPage(1)
+  }
+  const handleCredsFilter = (val) => {
+    setFilterCreds(val)
+    setPage(1)
+  }
 
   const handleDeleteCreds = async (ip) => {
     try {
@@ -302,13 +376,21 @@ const RPisPage = () => {
       key: 'hgw_ip',
       title: 'Home Gateway',
       render: (val) =>
-        val ? <span className="rpi-table__mono rpi-table__mono--cyan">{val}</span> : <span className="rpi-table__null">—</span>,
+        val ? (
+          <span className="rpi-table__mono rpi-table__mono--cyan">{val}</span>
+        ) : (
+          <span className="rpi-table__null">—</span>
+        ),
     },
     {
       key: 'last_seen',
       title: 'Last Seen',
       render: (val) =>
-        val ? <span className="rpi-table__time">{dayjs(val).format('MMM D, HH:mm')}</span> : <span className="rpi-table__null">—</span>,
+        val ? (
+          <span className="rpi-table__time">{dayjs(val).format('MMM D, HH:mm')}</span>
+        ) : (
+          <span className="rpi-table__null">—</span>
+        ),
     },
     {
       key: 'last_ssh_success',
@@ -401,9 +483,19 @@ const RPisPage = () => {
     },
   ]
 
-  const sshOk = data.filter((r) => r.last_ssh_success === true).length
-  const sshFail = data.filter((r) => r.last_ssh_success === false).length
-  const customCreds = data.filter((r) => r.has_custom_credentials).length
+  // ✅ page stats (always from current "data")
+  const pageStats = useMemo(() => computeStatsFromArray(data), [data])
+
+  // ✅ rule: page 1 => global, other pages => page stats (only in table view)
+  const useGlobalSummary = viewMode === 'switch' || (viewMode === 'table' && page === 1)
+
+  const summaryStats = useMemo(() => {
+    if (useGlobalSummary) {
+      // Si les stats globales ne sont pas prêtes, fallback sur les stats de la page (évite 0 temporaire)
+      return globalStatsReady ? globalStats : pageStats
+    }
+    return pageStats
+  }, [useGlobalSummary, globalStatsReady, globalStats, pageStats])
 
   return (
     <div className="rpis-page">
@@ -419,14 +511,20 @@ const RPisPage = () => {
           <div className="rpis-page__view-toggle">
             <button
               className={`rpis-page__view-btn ${viewMode === 'table' ? 'rpis-page__view-btn--active' : ''}`}
-              onClick={() => setViewMode('table')}
+              onClick={() => {
+                setViewMode('table')
+                setPage(1)
+              }}
               title="Table view"
             >
               <Table2 size={16} />
             </button>
             <button
               className={`rpis-page__view-btn ${viewMode === 'switch' ? 'rpis-page__view-btn--active' : ''}`}
-              onClick={() => setViewMode('switch')}
+              onClick={() => {
+                setViewMode('switch')
+                setPage(1)
+              }}
               title="Group by switch"
             >
               <LayoutList size={16} />
@@ -448,19 +546,19 @@ const RPisPage = () => {
         <div className="rpis-page__summary-sep" />
         <div className="rpis-page__summary-item rpis-page__summary-item--ok">
           <CheckCircle size={16} />
-          <span className="rpis-page__summary-val">{sshOk}</span>
+          <span className="rpis-page__summary-val">{summaryStats.sshOk}</span>
           <span className="rpis-page__summary-label">SSH OK</span>
         </div>
         <div className="rpis-page__summary-sep" />
         <div className="rpis-page__summary-item rpis-page__summary-item--fail">
           <XCircle size={16} />
-          <span className="rpis-page__summary-val">{sshFail}</span>
+          <span className="rpis-page__summary-val">{summaryStats.sshFail}</span>
           <span className="rpis-page__summary-label">SSH Failed</span>
         </div>
         <div className="rpis-page__summary-sep" />
         <div className="rpis-page__summary-item rpis-page__summary-item--cred">
           <KeyRound size={16} />
-          <span className="rpis-page__summary-val">{customCreds}</span>
+          <span className="rpis-page__summary-val">{summaryStats.customCreds}</span>
           <span className="rpis-page__summary-label">Custom Creds</span>
         </div>
       </div>
@@ -480,7 +578,11 @@ const RPisPage = () => {
 
             <div className="rpis-page__filter-group">
               <label className="rpis-page__filter-label">Credentials</label>
-              <select className="rpis-page__select" value={filterCreds} onChange={(e) => handleCredsFilter(e.target.value)}>
+              <select
+                className="rpis-page__select"
+                value={filterCreds}
+                onChange={(e) => handleCredsFilter(e.target.value)}
+              >
                 <option value="">All</option>
                 <option value="true">Custom</option>
                 <option value="false">Default</option>
@@ -554,7 +656,7 @@ const RPisPage = () => {
         open={!!rebootTarget}
         ip={rebootTarget?.ip_mgmt || ''}
         onConfirm={handleRebootConfirm}
-        onCancel={handleRebootCancel}
+        onCancel={() => setRebootTarget(null)}
       />
     </div>
   )
